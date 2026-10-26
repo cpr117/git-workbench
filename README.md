@@ -80,6 +80,17 @@ npm run package # 包含 macOS 原生组件构建，在 macOS 执行
 
 通过编辑器的 Extension Development Host 加载本项目进行调试。源码 ZIP 包含实现、测试和构建脚本；发行附件提供 VSIX、源码及 SHA256SUMS。
 
+## 指南网站
+
+[guide/](guide/) 包含功能介绍、交互演示和使用指南，与插件一起按 MIT 开源，打包 VSIX 时排除该目录。
+
+```sh
+npm --prefix guide run build
+python3 guide/tools/preview.py
+```
+
+打开 `http://127.0.0.1:4199/`。更多说明见 [网站 README](guide/README.md)。
+
 ## 已知限制与排错
 
 - 已在 macOS Cursor / Qoder 验证部分交互；Windows、Linux、Remote SSH 和 Dev Container 尚未独立实机验收。详见 [验证范围](docs/validation.md)。
