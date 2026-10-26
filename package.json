@@ -2,7 +2,7 @@
   "name": "git-workbench",
   "displayName": "Git Workbench",
   "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "publisher": "local-tools",
   "repository": { "type": "git", "url": "https://github.com/cpr117/git-workbench.git" },
   "homepage": "https://github.com/cpr117/git-workbench",
@@ -41,7 +41,7 @@
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "build:native": "node scripts/build-native.mjs",
-    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.12.0.vsix"
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.12.1.vsix"
   },
   "contributes": {
     "viewsContainers": {

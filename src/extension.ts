@@ -77,10 +77,10 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (repositories.size > 1) {
       const pick = await vscode.window.showQuickPick([...repositories].map(([root, git]) => ({ label: path.basename(root), description: root, git })), { placeHolder: '选择 Git 仓库' });
       if (pick) return pick.git;
-      throw new Error('已取消选择仓库。');
+      throw new vscode.CancellationError();
     }
     const folders = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: '打开 Git 仓库' });
-    if (!folders?.[0]) throw new Error('已取消选择仓库。');
+    if (!folders?.[0]) throw new vscode.CancellationError();
     const found = await Git.discover(folders[0].fsPath);
     return new Git(found.root, text => output.appendLine(text));
   }
@@ -117,6 +117,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
 
   private send(type: string, data: unknown): void { void this.panel?.webview.postMessage({ type, data }); }
   private error(error: unknown): void {
+    if (error instanceof vscode.CancellationError) return;
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(message); this.send('error', message);
     void vscode.window.showErrorMessage(`Git Workbench: ${message}`, '查看日志').then(choice => { if (choice) output.show(); });
@@ -316,7 +317,7 @@ export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('Git Workbench');
   const blameDecoration = vscode.window.createTextEditorDecorationType({ before: { color: new vscode.ThemeColor('editorLineNumber.foreground'), margin: '0 2em 0 0', fontStyle: 'normal' } });
   const decorated = new Set<string>();
-  const register = (id: string, callback: (...args: unknown[]) => Promise<unknown>) => context.subscriptions.push(vscode.commands.registerCommand(id, (...args: unknown[]) => callback(...args).catch(error => { output.appendLine(String(error)); void vscode.window.showErrorMessage(`Git Workbench: ${error instanceof Error ? error.message : String(error)}`); })));
+  const register = (id: string, callback: (...args: unknown[]) => Promise<unknown>) => context.subscriptions.push(vscode.commands.registerCommand(id, (...args: unknown[]) => callback(...args).catch(error => { if (error instanceof vscode.CancellationError) return; output.appendLine(String(error)); void vscode.window.showErrorMessage(`Git Workbench: ${error instanceof Error ? error.message : String(error)}`); })));
   const comparison = new DirectoryComparison(async (repo, revision, file, target) => {
     const left = revisionUri({ git: repo, ref: revision, file: file?.oldPath || file?.path || '对比', empty: !file || file.status[0] === 'A' });
     const right = !file || file.status[0] === 'D' ? revisionUri({ git: repo, ref: '', file: file?.path || '对比', empty: true })

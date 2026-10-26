@@ -17,6 +17,7 @@ class Uri {
   toString() { return `${this.scheme}:${this.path}?${this.query}`; }
 }
 class TabInputTextDiff { constructor(readonly original: Uri, readonly modified: Uri) {} }
+class CancellationError extends Error {}
 interface TestTab { input: TabInputTextDiff; label: string; }
 const tabs: TestTab[] = [];
 let tabListener: ((event: { closed: TestTab[] }) => Promise<void>) | undefined;
@@ -56,6 +57,8 @@ const warningQueue: unknown[] = [];
 const inputQueue: unknown[] = [];
 const commandArgs: unknown[][] = [];
 const pickQueue: unknown[] = [];
+const folderQueue: unknown[] = [];
+let folderPickerCalls = 0;
 let nativeCommands: string[] = [];
 let pickerCalls = 0;
 interface ComparisonNode { name: string; path: string; file?: { path: string }; children?: ComparisonNode[]; }
@@ -80,6 +83,7 @@ const windowStub = {
   registerWebviewViewProvider: (id: string, provider: typeof viewProvider) => { assert.equal(id, 'gitWorkbench.log'); viewProvider = provider; return disposable(); },
   withProgress: async (_options: unknown, task: () => Promise<unknown>) => task(),
   showQuickPick: async () => { pickerCalls++; return pickQueue.shift(); },
+  showOpenDialog: async () => { folderPickerCalls++; return folderQueue.shift(); },
   showInputBox: async () => inputQueue.shift(),
   showWarningMessage: async (text: string) => { warnings.push(text); return warningQueue.shift(); },
   showInformationMessage: async (text: string) => { infos.push(text); return undefined; },
@@ -87,7 +91,7 @@ const windowStub = {
   showTextDocument: async () => undefined,
 };
 const vscodeStub = {
-  Uri, TabInputTextDiff, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { constructor(readonly id: string) {} },
+  Uri, TabInputTextDiff, CancellationError, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { constructor(readonly id: string) {} },
   TreeItem: class { constructor(readonly label: string, readonly collapsibleState: number) {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   EventEmitter: class { event = () => disposable(); fire = noop; dispose = noop; },
@@ -98,7 +102,7 @@ const vscodeStub = {
   workspace: {
     getConfiguration: () => ({ get: (key: string, fallback?: unknown) => key === 'historyPresentation' ? presentation || fallback : comparisonSettings.get(key) ?? fallback, inspect: () => undefined, update: async (key: string, value: unknown) => { comparisonSettings.set(key, value); configurationListener?.({ affectsConfiguration: name => name === `gitWorkbench.${key}` }); } }),
     onDidChangeConfiguration: (listener: typeof configurationListener) => { configurationListener = listener; return disposable(); },
-    isTrusted: true, workspaceFolders: [], onDidChangeTextDocument: disposable, onDidCloseTextDocument: disposable,
+    isTrusted: true, workspaceFolders: [] as { uri: Uri }[], onDidChangeTextDocument: disposable, onDidCloseTextDocument: disposable,
     registerTextDocumentContentProvider: (_scheme: string, provider: typeof revisionProvider) => { revisionProvider = provider; return disposable(); },
   },
   extensions: { getExtension: () => undefined },
@@ -139,6 +143,7 @@ async function fixture(task: (git: Git, root: string) => Promise<void>): Promise
   popups.length = 0; presentation = 'editor'; vscodeStub.env.remoteName = undefined;
   commands.clear(); panels.length = 0; logViews.length = 0; viewProvider = undefined; executed.length = 0; errors.length = 0; infos.length = 0; pickQueue.length = 0; pickerCalls = 0;
   warnings.length = 0; warningQueue.length = 0; inputQueue.length = 0; commandArgs.length = 0;
+  folderQueue.length = 0; folderPickerCalls = 0; vscodeStub.workspace.workspaceFolders = [];
   comparisonProvider = undefined; treeReveals.length = 0; tabs.length = 0; tabListener = undefined; comparisonSettings.clear(); configurationListener = undefined;
   const root = await mkdtemp(path.join(tmpdir(), 'git-workbench-host-'));
   const git = new Git(root);
@@ -727,4 +732,47 @@ test('branch writes reject an external checkout even when both branches point to
   assert.equal(warnings.length, 0); assert.equal((await git.state()).branch, 'other');
   assert.equal((await git.refs()).some(ref => ref.name === 'main'), true);
   assert.equal((await git.refs()).some(ref => ref.name === 'unexpected'), false);
+}));
+
+async function multipleRepositories(root: string) {
+  const other = path.join(root, 'other-repository'); await mkdir(other); await new Git(other).run(['init', '-b', 'other']);
+  vscodeStub.workspace.workspaceFolders = [{ uri: Uri.file(root) }, { uri: Uri.file(other) }];
+}
+
+test('cancelling repository selection from registered commands exits without error', async () => fixture(async (_git, root) => {
+  await multipleRepositories(root);
+  await commands.get('gitWorkbench.open')!();
+  await commands.get('gitWorkbench.operations')!();
+  assert.equal(pickerCalls, 2); assert.equal(logViews.length, 0);
+  assert.deepEqual(errors, []); assert.deepEqual(warnings, []);
+}));
+
+test('cancelling a repository switch preserves current graph and can be retried', async () => fixture(async (git, root) => {
+  const { view } = await branchView(); await multipleRepositories(root);
+  const before = [...view.messages], head = await git.head();
+  await view.listener!({ type: 'repo' });
+  assert.deepEqual(errors, []); assert.deepEqual(view.messages, before, 'no error banner, reset or loading changes on cancel');
+  assert.equal(await git.head(), head);
+  pickQueue.push({ git }); await view.listener!({ type: 'repo' });
+  assert.ok(view.messages.length > before.length); assert.equal(view.messages.some(message => message.type === 'error'), false);
+  assert.equal(view.messages.filter(message => message.type === 'snapshot').at(-1)!.data!.root, git.root);
+}));
+
+test('cancelling folder selection is silent in commands and initial log loading', async () => fixture(async () => {
+  windowStub.activeTextEditor = undefined;
+  await commands.get('gitWorkbench.open')!();
+  await commands.get('gitWorkbench.operations')!();
+  await vscodeStub.commands.executeCommand('gitWorkbench.log.focus');
+  await logViews[0].listener!({ type: 'init' });
+  assert.equal(folderPickerCalls, 3); assert.deepEqual(errors, []);
+  assert.equal(logViews[0].messages.some(message => message.type === 'error'), false);
+}));
+
+test('invalid folder selection still reports real Git discovery errors', async () => fixture(async () => {
+  windowStub.activeTextEditor = undefined;
+  const nonRepository = await mkdtemp(path.join(tmpdir(), 'git-workbench-not-repo-'));
+  try {
+    folderQueue.push([Uri.file(nonRepository)]); await commands.get('gitWorkbench.open')!();
+    assert.equal(errors.length, 1); assert.match(errors[0], /Git Workbench:/);
+  } finally { await rm(nonRepository, { recursive: true, force: true }); }
 }));
