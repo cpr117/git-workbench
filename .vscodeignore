@@ -1,0 +1,14 @@
+node_modules/**
+src/**
+test/**
+.vscode/**
+tsconfig.json
+package-lock.json
+dist/test/**
+**/*.map
+*.vsix
+
+native/**
+scripts/**
+.build/**
+VERIFICATION.md

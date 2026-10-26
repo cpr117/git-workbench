@@ -1,0 +1,735 @@
+{
+  "name": "git-workbench",
+  "displayName": "Git Workbench",
+  "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
+  "version": "0.12.0",
+  "publisher": "local-tools",
+  "repository": { "type": "git", "url": "https://github.com/cpr117/git-workbench.git" },
+  "homepage": "https://github.com/cpr117/git-workbench",
+  "bugs": { "url": "https://github.com/cpr117/git-workbench/issues" },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "graph",
+    "history",
+    "blame",
+    "cursor"
+  ],
+  "main": "./dist/src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Git commands and repository hooks require a trusted workspace."
+    },
+    "virtualWorkspaces": false
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "check": "tsc -p . --noEmit",
+    "test": "npm run compile && node --test dist/test/*.test.js",
+    "build:native": "node scripts/build-native.mjs",
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.12.0.vsix"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "git-workbench-panel",
+          "title": "Git",
+          "icon": "media/git.svg"
+        }
+      ]
+    },
+    "views": {
+      "git-workbench-panel": [
+        {
+          "id": "gitWorkbench.log",
+          "name": "Git Log",
+          "type": "webview",
+          "contextualTitle": "Git Workbench"
+        }
+      ],
+      "scm": [
+        {
+          "id": "gitWorkbench.compareFiles",
+          "name": "对比",
+          "contextualTitle": "Git Workbench 对比",
+          "icon": "media/git.svg",
+          "visibility": "collapsed",
+          "when": "gitWorkbench.comparisonActive"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Git Workbench",
+      "properties": {
+        "gitWorkbench.historyPresentation": {
+          "type": "string",
+          "enum": [
+            "popup",
+            "editor"
+          ],
+          "default": "popup",
+          "enumDescriptions": [
+            "macOS 本地原生历史小弹窗，不创建编辑器标签页。",
+            "使用编辑器历史标签页，适用于其他平台和远程工作区。"
+          ],
+          "description": "选区 / 文件历史的展示方式。默认原生小弹窗；不支持的平台不会自动改为标签页。"
+        },
+        "gitWorkbench.comparisonViewMode": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "list"
+          ],
+          "default": "tree",
+          "enumDescriptions": [
+            "按项目 / 目录层级展示变更文件。",
+            "平铺展示变更文件，并显示所属目录。"
+          ],
+          "description": "源代码管理中“对比”的文件展示方式，也可在该视图的更多操作菜单中切换。"
+        },
+        "gitWorkbench.comparisonSortOrder": {
+          "type": "string",
+          "enum": [
+            "path",
+            "name",
+            "status"
+          ],
+          "default": "path",
+          "enumDescriptions": [
+            "按路径排序。",
+            "按文件名称排序。",
+            "按 Git 状态排序，相同状态再按路径排序。"
+          ],
+          "description": "对比文件的排序方式；树形模式始终将目录排在文件前。"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "gitWorkbench.menu",
+        "title": "打开功能菜单",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.open",
+        "title": "打开提交图",
+        "category": "Git Workbench",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitWorkbench.selectionHistory",
+        "title": "查看选区 / 当前行历史",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.fileHistory",
+        "title": "查看文件历史",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.blame",
+        "title": "查看当前行提交",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.toggleBlame",
+        "title": "切换逐行作者标注",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.operations",
+        "title": "Git 操作",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.stageSelection",
+        "title": "暂存选中代码块",
+        "category": "Git Workbench"
+      },
+      {
+        "command": "gitWorkbench.explorer.commit",
+        "title": "提交目录…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.add",
+        "title": "添加到暂存区",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.exclude",
+        "title": ".git/info/exclude（本地排除）…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.diff",
+        "title": "显示差异",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.compareRevision",
+        "title": "与指定版本比较…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.compareBranch",
+        "title": "与分支比较…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.history",
+        "title": "显示历史",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.rollback",
+        "title": "回滚目录到 HEAD…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.push",
+        "title": "Push…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.pull",
+        "title": "Pull（仅快进）…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.fetch",
+        "title": "Fetch…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.merge",
+        "title": "Merge…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.rebase",
+        "title": "Rebase…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.branches",
+        "title": "Branches（管理分支）…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.newBranch",
+        "title": "新建分支…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.newTag",
+        "title": "新建标签…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.reset",
+        "title": "Reset HEAD…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.stash",
+        "title": "Stash 所选目录…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.unstash",
+        "title": "Unstash（所属仓库）…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.remotes",
+        "title": "管理远端…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.explorer.clone",
+        "title": "Clone…",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.compare.refresh",
+        "title": "刷新目录比较",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitWorkbench.compare.search",
+        "title": "筛选变更目录",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted",
+        "icon": "$(search)"
+      },
+      {
+        "command": "gitWorkbench.compare.select",
+        "title": "预览对比文件",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "gitWorkbench.compare.viewTree",
+        "title": "以树形展示",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != tree"
+      },
+      {
+        "command": "gitWorkbench.compare.viewList",
+        "title": "以列表展示",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != list"
+      },
+      {
+        "command": "gitWorkbench.compare.sort.name",
+        "title": "按名称排序",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != name"
+      },
+      {
+        "command": "gitWorkbench.compare.sort.path",
+        "title": "按路径排序",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != path"
+      },
+      {
+        "command": "gitWorkbench.compare.sort.status",
+        "title": "按状态排序",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != status"
+      },
+      {
+        "command": "gitWorkbench.compare.close",
+        "title": "关闭对比",
+        "category": "Git Workbench",
+        "enablement": "gitWorkbench.comparisonActive"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "gitWorkbench.editorMenu",
+        "label": "Git Workbench"
+      },
+      {
+        "id": "gitWorkbench.explorerMenu",
+        "label": "Git Workbench"
+      },
+      {
+        "id": "gitWorkbench.directoryMenu",
+        "label": "Git"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "gitWorkbench.editorMenu",
+          "when": "resourceScheme == file && isWorkspaceTrusted",
+          "group": "gitWorkbench"
+        }
+      ],
+      "explorer/context": [
+        {
+          "submenu": "gitWorkbench.explorerMenu",
+          "when": "resourceScheme == file && !explorerResourceIsFolder && isWorkspaceTrusted",
+          "group": "gitWorkbench"
+        },
+        {
+          "submenu": "gitWorkbench.directoryMenu",
+          "when": "resourceScheme == file && explorerResourceIsFolder && isWorkspaceTrusted",
+          "group": "gitWorkbench"
+        }
+      ],
+      "gitWorkbench.editorMenu": [
+        {
+          "command": "gitWorkbench.selectionHistory",
+          "group": "1_history@1"
+        },
+        {
+          "command": "gitWorkbench.fileHistory",
+          "group": "1_history@2"
+        },
+        {
+          "command": "gitWorkbench.blame",
+          "group": "1_history@3"
+        },
+        {
+          "command": "gitWorkbench.toggleBlame",
+          "group": "1_history@4"
+        },
+        {
+          "command": "gitWorkbench.stageSelection",
+          "when": "editorHasSelection",
+          "group": "2_commit"
+        },
+        {
+          "command": "gitWorkbench.open",
+          "group": "3_repository@1"
+        },
+        {
+          "command": "gitWorkbench.operations",
+          "group": "3_repository@2"
+        }
+      ],
+      "gitWorkbench.explorerMenu": [
+        {
+          "command": "gitWorkbench.fileHistory",
+          "group": "1_history"
+        },
+        {
+          "command": "gitWorkbench.open",
+          "group": "2_repository@1"
+        },
+        {
+          "command": "gitWorkbench.operations",
+          "group": "2_repository@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitWorkbench.menu",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "gitWorkbench.open",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.selectionHistory",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.fileHistory",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.blame",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.toggleBlame",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.operations",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.stageSelection",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.commit",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.add",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.exclude",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.diff",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareRevision",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareBranch",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.history",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.rollback",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.push",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.pull",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.fetch",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.merge",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.rebase",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.branches",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.newBranch",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.newTag",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.reset",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.stash",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.unstash",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.remotes",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.clone",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.refresh",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.search",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.select",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.viewTree",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.viewList",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.name",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.path",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.status",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.close",
+          "when": "false"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "gitWorkbench.open",
+          "group": "navigation"
+        }
+      ],
+      "gitWorkbench.directoryMenu": [
+        {
+          "command": "gitWorkbench.explorer.commit",
+          "group": "1_commit@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.add",
+          "group": "1_commit@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.exclude",
+          "group": "1_commit@3"
+        },
+        {
+          "command": "gitWorkbench.explorer.diff",
+          "group": "2_history@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareRevision",
+          "group": "2_history@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareBranch",
+          "group": "2_history@3"
+        },
+        {
+          "command": "gitWorkbench.explorer.history",
+          "group": "2_history@4"
+        },
+        {
+          "command": "gitWorkbench.explorer.rollback",
+          "group": "2_history@5"
+        },
+        {
+          "command": "gitWorkbench.explorer.push",
+          "group": "3_sync@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.pull",
+          "group": "3_sync@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.fetch",
+          "group": "3_sync@3"
+        },
+        {
+          "command": "gitWorkbench.explorer.merge",
+          "group": "4_integrate@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.rebase",
+          "group": "4_integrate@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.branches",
+          "group": "5_refs@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.newBranch",
+          "group": "5_refs@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.newTag",
+          "group": "5_refs@3"
+        },
+        {
+          "command": "gitWorkbench.explorer.reset",
+          "group": "5_refs@4"
+        },
+        {
+          "command": "gitWorkbench.explorer.stash",
+          "group": "6_stash@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.unstash",
+          "group": "6_stash@2"
+        },
+        {
+          "command": "gitWorkbench.explorer.remotes",
+          "group": "7_tools@1"
+        },
+        {
+          "command": "gitWorkbench.explorer.clone",
+          "group": "7_tools@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "gitWorkbench.compare.search",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitWorkbench.compare.refresh",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitWorkbench.compare.viewTree",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "1_view@1"
+        },
+        {
+          "command": "gitWorkbench.compare.viewList",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "1_view@2"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.name",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "2_sort@1"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.path",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "2_sort@2"
+        },
+        {
+          "command": "gitWorkbench.compare.sort.status",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "2_sort@3"
+        },
+        {
+          "command": "gitWorkbench.compare.close",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "3_comparison@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "gitWorkbench.open",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "gitWorkbench.compareFiles",
+        "contents": "右键文件夹或项目，选择 **Git → 显示差异**、**与指定版本比较** 或 **与分支比较**。"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}
