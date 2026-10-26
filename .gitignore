@@ -5,3 +5,4 @@ dist/
 native-bin/
 .build/
 VERIFICATION.md
+/private/

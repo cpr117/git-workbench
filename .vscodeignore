@@ -12,3 +12,4 @@ native/**
 scripts/**
 .build/**
 VERIFICATION.md
+private/**
