@@ -1,3 +1,4 @@
+import { t } from './i18n';
 export interface DiffCell { line: number; text: string; }
 export interface DiffRow { kind: 'context' | 'change' | 'hunk' | 'note'; left?: DiffCell; right?: DiffCell; label?: string; }
 
@@ -35,9 +36,9 @@ export interface HistorySnapshot { text: string; offset: number; }
 // git log -L includes the tracked range, even when it has moved in the file.
 export function historySnapshot(patch: string, side: 'left' | 'right'): HistorySnapshot {
   const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/m.exec(patch);
-  if (!hunk) throw new Error('该历史版本缺少选区范围，无法比较；请重新打开历史。');
+  if (!hunk) throw new Error(t("该历史版本缺少选区范围，无法比较；请重新打开历史。"));
   const cells = selectionDiff(patch).flatMap(row => row[side] ? [row[side]!] : []);
-  if (cells.some((cell, index) => index > 0 && cell.line !== cells[index - 1].line + 1)) throw new Error('该历史选区包含分离的代码片段，请缩小选区或使用文件历史。');
+  if (cells.some((cell, index) => index > 0 && cell.line !== cells[index - 1].line + 1)) throw new Error(t("该历史选区包含分离的代码片段，请缩小选区或使用文件历史。"));
   const start = Number(hunk[side === 'left' ? 1 : 3]);
   const raw = patch.split('\n');
   const noNewline = raw.some((line, index) => line.startsWith('\\ No newline') && (raw[index - 1]?.startsWith(side === 'left' ? '-' : '+') || raw[index - 1]?.startsWith(' ')));

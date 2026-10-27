@@ -30,6 +30,8 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
     private var workspaceObservers: [NSObjectProtocol] = []
     private var pageURL: URL!
     private var shown = false
+    private var chinese = true
+    private func text(_ zh: String, _ en: String) -> String { chinese ? zh : en }
 
     func emit(_ message: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
@@ -37,9 +39,10 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard CommandLine.arguments.count == 4 else { NSApp.terminate(nil); return }
+        guard CommandLine.arguments.count == 5 else { NSApp.terminate(nil); return }
+        chinese = CommandLine.arguments[4].lowercased().hasPrefix("zh")
         guard let owner = owningApplication() else {
-            emit(["type": "fatal", "message": "无法识别启动历史窗口的应用，请从编辑器重新打开。"])
+            emit(["type": "fatal", "message": text("无法识别启动历史窗口的应用，请从编辑器重新打开。", "Cannot identify the editor that opened history. Open it again from the editor.")])
             NSApp.terminate(nil); return
         }
         ownerApp = owner
@@ -49,7 +52,8 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
         config.websiteDataStore = .nonPersistent()
         config.userContentController.add(self, name: "gitWorkbench")
         let theme = CommandLine.arguments[3] == "light" ? "light" : "dark"
-        let script = "document.addEventListener('DOMContentLoaded', () => document.documentElement.dataset.theme = '\(theme)');"
+        let locale = chinese ? "zh-cn" : "en"
+        let script = "window.gitWorkbenchLanguage='\(locale)'; document.addEventListener('DOMContentLoaded', () => document.documentElement.dataset.theme = '\(theme)');"
         config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -83,16 +87,16 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
         let menu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        let close = appMenu.addItem(withTitle: "关闭历史窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let close = appMenu.addItem(withTitle: text("关闭历史窗口", "Close History Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         close.target = panel
         appItem.submenu = appMenu
         menu.addItem(appItem)
         // Standard text shortcuts in WKWebView, including search and copying code.
         let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editMenu = NSMenu(title: text("编辑", "Edit"))
+        editMenu.addItem(withTitle: text("复制", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: text("粘贴", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: text("全选", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
         menu.addItem(editItem)
         NSApp.mainMenu = menu
@@ -136,7 +140,7 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
     func receive(_ message: [String: Any]) {
         if message["type"] as? String == "closeHost" { panel.close(); return }
         webView.callAsyncJavaScript("window.dispatchEvent(new MessageEvent('message', {data: message}));", arguments: ["message": message], in: nil, in: .page) { [weak self] result in
-            if case .failure = result { self?.emit(["type": "fatal", "message": "历史窗口无法接收数据。请关闭后重试。"]); NSApp.terminate(nil) }
+            if case .failure = result { self?.emit(["type": "fatal", "message": self?.text("历史窗口无法接收数据。请关闭后重试。", "The history window cannot receive data. Close it and try again.") ?? "History window closed."]); NSApp.terminate(nil) }
         }
     }
 
@@ -154,10 +158,10 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
         decisionHandler(navigationAction.request.url?.standardizedFileURL == pageURL ? .allow : .cancel)
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        emit(["type": "fatal", "message": "历史窗口资源加载失败。"]); NSApp.terminate(nil)
+        emit(["type": "fatal", "message": text("历史窗口资源加载失败。", "History window resources failed to load.")]); NSApp.terminate(nil)
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        emit(["type": "fatal", "message": "历史窗口渲染进程已退出，请重新打开。"]); NSApp.terminate(nil)
+        emit(["type": "fatal", "message": text("历史窗口渲染进程已退出，请重新打开。", "The history renderer exited. Open history again.")]); NSApp.terminate(nil)
     }
     func windowWillClose(_ notification: Notification) {
         emit(["type": "hostClosing", "reason": "windowClosed"])

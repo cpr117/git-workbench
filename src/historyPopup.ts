@@ -1,3 +1,4 @@
+import { t, getLocale } from './i18n';
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { chmod } from 'node:fs/promises';
 import * as path from 'node:path';
@@ -40,7 +41,7 @@ export class PopupTransport implements HistorySurface {
   };
   constructor(private readonly child: ChildProcessWithoutNullStreams, private readonly report: (message: string) => void) {
     this.started = new Promise((resolve, reject) => { this.resolveStart = resolve; this.rejectStart = reject; });
-    const timeout = setTimeout(() => this.fail(new Error('历史小窗启动超时，未创建编辑器标签页。')), 15_000);
+    const timeout = setTimeout(() => this.fail(new Error(t("历史小窗启动超时，未创建编辑器标签页。"))), 15_000);
     timeout.unref();
     const lines = createInterface({ input: child.stdout });
     child.stderr.setEncoding('utf8');
@@ -50,16 +51,16 @@ export class PopupTransport implements HistorySurface {
     lines.on('line', line => {
       if (this.disposed) return;
       let message: Record<string, unknown>;
-      try { message = JSON.parse(line); } catch { this.fail(new Error('历史小窗通信格式错误。')); return; }
+      try { message = JSON.parse(line); } catch { this.fail(new Error(t("历史小窗通信格式错误。"))); return; }
       if (!message || typeof message !== 'object') return;
-      if (message.type === 'fatal') { this.fail(new Error(String(message.message || '历史小窗启动失败。'))); return; }
+      if (message.type === 'fatal') { this.fail(new Error(String(message.message || t("历史小窗启动失败。")))); return; }
       if (!this.ready && message.type === 'init') { this.ready = true; clearTimeout(timeout); this.resolveStart(); }
       if (this.listener) this.listener(message); else this.pending.push(message);
     });
     child.on('exit', (code, signal) => {
       clearTimeout(timeout); lines.close();
-      if (!this.ready && !this.disposed) this.rejectStart(new Error(`历史小窗未能启动（${code ?? 'signal'}）。${this.stderr}`));
-      else if (!this.disposed && (code || signal)) report(`历史小窗异常退出（${code ?? signal}）。`);
+      if (!this.ready && !this.disposed) this.rejectStart(new Error(t("历史小窗未能启动（{0}）。{1}", code ?? 'signal', this.stderr)));
+      else if (!this.disposed && (code || signal)) report(t("历史小窗异常退出（{0}）。", code ?? signal));
       this.finish();
     });
   }
@@ -77,7 +78,7 @@ export class PopupTransport implements HistorySurface {
   onDidDispose(listener: () => void): Subscription { this.disposals.add(listener); return { dispose: () => this.disposals.delete(listener) }; }
   dispose(): void {
     if (this.disposed) return;
-    if (!this.ready) this.rejectStart(new Error('历史小窗启动已取消。'));
+    if (!this.ready) this.rejectStart(new Error(t("历史小窗启动已取消。")));
     this.child.stdin.end(`${JSON.stringify({ type: 'closeHost' })}\n`);
     this.finish();
     const timer = setTimeout(() => { if (this.child.exitCode === null && !this.child.killed) this.child.kill(); }, 1000);
@@ -95,8 +96,8 @@ export function popupEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 export async function openHistoryPopup(extensionPath: string, title: string, light: boolean, report: (message: string) => void): Promise<HistorySurface> {
   const binary = path.join(extensionPath, 'native-bin/Git Workbench History.app/Contents/MacOS/GitWorkbenchHistory');
-  try { await chmod(binary, 0o755); } catch { throw new Error('原生历史小窗组件不可用，请重新安装包含 macOS 小窗组件的 VSIX。'); }
-  const child = spawn(binary, [path.join(extensionPath, 'media'), title, light ? 'light' : 'dark'], { stdio: ['pipe', 'pipe', 'pipe'], env: popupEnvironment(process.env) });
+  try { await chmod(binary, 0o755); } catch { throw new Error(t("原生历史小窗组件不可用，请重新安装包含 macOS 小窗组件的 VSIX。")); }
+  const child = spawn(binary, [path.join(extensionPath, 'media'), title, light ? 'light' : 'dark', getLocale()], { stdio: ['pipe', 'pipe', 'pipe'], env: popupEnvironment(process.env) });
   const surface = new PopupTransport(child, report);
   await surface.started;
   return surface;

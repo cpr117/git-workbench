@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
 import { realpathSync } from 'node:fs';
@@ -22,7 +23,7 @@ export class GitError extends Error {
 }
 
 export function assertHash(hash: string): string {
-  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(hash)) throw new Error('无效的提交 ID。请刷新提交图。');
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(hash)) throw new Error(t("无效的提交 ID。请刷新提交图。"));
   return hash;
 }
 
@@ -134,12 +135,12 @@ export class Git {
       }
     }
     const relative = path.relative(realpathSync(this.root), path.join(parent, ...suffix));
-    if ((!relative && !allowRoot) || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('文件不属于当前仓库。');
+    if ((!relative && !allowRoot) || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(t("文件不属于当前仓库。"));
     return relative.split(path.sep).join('/');
   }
 
   file(relative: string): string {
-    if (typeof relative !== 'string' || relative.includes('\0')) throw new Error('无效的文件路径。');
+    if (typeof relative !== 'string' || relative.includes('\0')) throw new Error(t("无效的文件路径。"));
     const file = path.resolve(this.root, relative);
     this.relative(file);
     return file;
@@ -173,7 +174,7 @@ export class Git {
     if (filters.since) args.push(`--since=${filters.since}`);
     if (filters.until) args.push(`--until=${filters.until}`);
     if (filters.ref) {
-      if (filters.ref !== 'HEAD' && !(await this.refs()).some(ref => ref.full === filters.ref)) throw new Error('分支已不存在，请刷新。');
+      if (filters.ref !== 'HEAD' && !(await this.refs()).some(ref => ref.full === filters.ref)) throw new Error(t("分支已不存在，请刷新。"));
       args.push(filters.ref);
     } else args.push('--all', 'HEAD');
     args.push('--');
@@ -183,7 +184,7 @@ export class Git {
 
   async commit(hash: string): Promise<Commit> {
     const commits = parseCommits(await this.run(['show', '-s', '-z', `--format=${format}`, assertHash(hash), '--']));
-    if (!commits[0]) throw new Error('找不到提交。');
+    if (!commits[0]) throw new Error(t("找不到提交。"));
     return commits[0];
   }
 
@@ -193,7 +194,7 @@ export class Git {
 
   async changes(hash: string, parent?: string): Promise<{ base: string; files: Change[]; commit: Commit }> {
     const commit = await this.commit(hash);
-    if (parent && !commit.parents.includes(parent)) throw new Error('请选择该合并提交的父提交。');
+    if (parent && !commit.parents.includes(parent)) throw new Error(t("请选择该合并提交的父提交。"));
     const base = parent || commit.parents[0] || await this.emptyTree();
     const files = await this.compare(base, hash);
     return { base, files, commit };
@@ -206,7 +207,7 @@ export class Git {
   // Callers pass selected commits in the displayed newest-first log order.
   // Include the oldest selected commit itself by starting at its first parent.
   async commitSelection(hashes: string[]): Promise<CommitSelection> {
-    if (!hashes.length || hashes.length > 300) throw new Error('请选中 1–300 个提交。');
+    if (!hashes.length || hashes.length > 300) throw new Error(t("请选中 1–300 个提交。"));
     const commits: Commit[] = [];
     for (const hash of new Set(hashes)) commits.push(await this.commit(assertHash(hash)));
     const target = commits[0].hash, base = commits.at(-1)!.parents[0] || await this.emptyTree();
@@ -215,7 +216,7 @@ export class Git {
   }
 
   async textPatch(before: string, after: string, context = 5): Promise<string> {
-    if (before.includes('\0') || after.includes('\0')) throw new Error('二进制内容无法显示为文本历史差异。');
+    if (before.includes('\0') || after.includes('\0')) throw new Error(t("二进制内容无法显示为文本历史差异。"));
     const directory = await mkdtemp(path.join(tmpdir(), 'git-workbench-compare-'));
     try {
       const left = path.join(directory, 'before'), right = path.join(directory, 'after');
@@ -285,15 +286,15 @@ export class Git {
 
   async lineHistoryDetails(relative: string, start: number, end: number, contents?: string): Promise<{ entries: HistoryEntry[]; notice?: string }> {
     this.file(relative);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) throw new Error('无效的选区行号。');
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) throw new Error(t("无效的选区行号。"));
     const head = await this.head();
-    if (!head) throw new Error('仓库尚无提交，所选代码暂无提交历史。');
+    if (!head) throw new Error(t("仓库尚无提交，所选代码暂无提交历史。"));
     let headFile = relative;
     const exists = async (file: string) => !!(await this.run(['ls-tree', '--name-only', '-z', head, '--', file])).trim();
     if (!await exists(headFile)) {
       const staged = parseChanges(await this.run(['diff', ...safeDiff, '--cached', '--name-status', '-z', '-M', head, '--']));
       headFile = staged.find(change => change.path === relative && change.status.startsWith('R'))?.oldPath || relative;
-      if (!await exists(headFile)) throw new Error('该文件尚无对应的 HEAD 版本，新增文件暂无提交历史。');
+      if (!await exists(headFile)) throw new Error(t("该文件尚无对应的 HEAD 版本，新增文件暂无提交历史。"));
     }
     const before = (await this.content(head, headFile)).replace(/\r\n/g, '\n');
     const current = (contents ?? await readFile(this.file(relative), 'utf8')).replace(/\r\n/g, '\n');
@@ -302,10 +303,10 @@ export class Git {
     const mapped = mapLineRange(patch, start, end, currentLines);
     let notice: string | undefined;
     if (before !== current || headFile !== relative) {
-      notice = `当前选区 ${start}–${end} 行已映射到 HEAD ${head.slice(0, 8)} 的 ${mapped.start}–${mapped.end} 行，显示已提交历史；本次查看不会保存、暂存或提交本地修改。`;
-      if (mapped.expanded) notice += ' 改写部分按修改前的整个代码块追溯。';
-      if (mapped.added) notice += ' 纯新增行暂无历史，未纳入追溯。';
-      if (headFile !== relative) notice += ` 沿重命名前路径 ${headFile} 追溯。`;
+      notice = t("当前选区 {0}–{1} 行已映射到 HEAD {2} 的 {3}–{4} 行，显示已提交历史；本次查看不会保存、暂存或提交本地修改。", start, end, head.slice(0, 8), mapped.start, mapped.end);
+      if (mapped.expanded) notice += t(" 改写部分按修改前的整个代码块追溯。");
+      if (mapped.added) notice += t(" 纯新增行暂无历史，未纳入追溯。");
+      if (headFile !== relative) notice += t(" 沿重命名前路径 {0} 追溯。", headFile);
     }
     const raw = await this.run(['log', '--max-count=300', `--format=%x1e${format}%x00`, ...safeDiff, `-L${mapped.start},${mapped.end}:${headFile}`, head, '--']);
     const entries = raw.split('\x1e').filter(Boolean).map(chunk => {
@@ -335,7 +336,7 @@ export class Git {
   }
 
   async validateBranch(name: string): Promise<void> {
-    if (!name || name.startsWith('-') || name.includes('@{') || /[\r\n\0]/.test(name)) throw new Error('无效的分支名称。');
+    if (!name || name.startsWith('-') || name.includes('@{') || /[\r\n\0]/.test(name)) throw new Error(t("无效的分支名称。"));
     await this.run(['check-ref-format', '--branch', name]);
   }
 

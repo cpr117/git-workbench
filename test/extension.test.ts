@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { Git } from '../src/git';
+import { setLocale } from '../src/i18n';
 
 type Message = { type: string; data?: Record<string, unknown> };
 const noop = () => {};
@@ -61,6 +62,8 @@ const folderQueue: unknown[] = [];
 let folderPickerCalls = 0;
 let nativeCommands: string[] = [];
 let pickerCalls = 0;
+const quickPicks: { labels: string[]; title?: string; placeHolder?: string }[] = [];
+const confirmationButtons: string[][] = [];
 interface ComparisonNode { name: string; path: string; file?: { path: string }; children?: ComparisonNode[]; }
 let comparisonProvider: { getChildren(node?: ComparisonNode): ComparisonNode[]; getParent(node: ComparisonNode): ComparisonNode | undefined; getTreeItem(node: ComparisonNode): { collapsibleState: number; description?: string; tooltip?: string; command?: { arguments?: unknown[] } } } | undefined;
 const windowStub = {
@@ -82,10 +85,10 @@ const windowStub = {
   createTreeView: (id: string, options: { treeDataProvider: typeof comparisonProvider; showCollapseAll: boolean }) => { assert.equal(id, 'gitWorkbench.compareFiles'); assert.equal(options.showCollapseAll, true); comparisonProvider = options.treeDataProvider; comparisonTreeState = { message: undefined, description: '' }; return { get message() { return comparisonTreeState.message; }, set message(value: string | undefined) { comparisonTreeState.message = value; }, get description() { return comparisonTreeState.description; }, set description(value: string) { comparisonTreeState.description = value; }, dispose: noop, reveal: async (node: ComparisonNode | undefined, options: unknown) => { treeReveals.push({ node, options }); } }; },
   registerWebviewViewProvider: (id: string, provider: typeof viewProvider) => { assert.equal(id, 'gitWorkbench.log'); viewProvider = provider; return disposable(); },
   withProgress: async (_options: unknown, task: () => Promise<unknown>) => task(),
-  showQuickPick: async () => { pickerCalls++; return pickQueue.shift(); },
+  showQuickPick: async (items: readonly (string | { label: string })[] = [], options?: { title?: string; placeHolder?: string }) => { quickPicks.push({ labels: items.map(item => typeof item === 'string' ? item : item.label), ...options }); pickerCalls++; return pickQueue.shift(); },
   showOpenDialog: async () => { folderPickerCalls++; return folderQueue.shift(); },
   showInputBox: async () => inputQueue.shift(),
-  showWarningMessage: async (text: string) => { warnings.push(text); return warningQueue.shift(); },
+  showWarningMessage: async (text: string, ...items: unknown[]) => { warnings.push(text); confirmationButtons.push(items.filter(item => typeof item === 'string') as string[]); return warningQueue.shift(); },
   showInformationMessage: async (text: string) => { infos.push(text); return undefined; },
   showErrorMessage: async (text: string) => { errors.push(text); return undefined; },
   showTextDocument: async () => undefined,
@@ -106,7 +109,7 @@ const vscodeStub = {
     registerTextDocumentContentProvider: (_scheme: string, provider: typeof revisionProvider) => { revisionProvider = provider; return disposable(); },
   },
   extensions: { getExtension: () => undefined },
-  env: { remoteName: undefined as string | undefined, clipboard: { writeText: async () => undefined } },
+  env: { language: 'zh-cn', remoteName: undefined as string | undefined, clipboard: { writeText: async () => undefined } },
   commands: {
     registerCommand: (id: string, handler: (...args: unknown[]) => Promise<unknown>) => { commands.set(id, handler); return disposable(); },
     getCommands: async () => nativeCommands,
@@ -138,7 +141,8 @@ try {
   activate = (require('../src/extension') as { activate: (context: unknown) => void }).activate;
 } finally { loader._load = originalLoad; }
 
-async function fixture(task: (git: Git, root: string) => Promise<void>): Promise<void> {
+async function fixture(task: (git: Git, root: string) => Promise<void>, language = 'zh-cn'): Promise<void> {
+  vscodeStub.env.language = language; quickPicks.length = 0; confirmationButtons.length = 0;
   for (const popup of popups) popup.dispose();
   popups.length = 0; presentation = 'editor'; vscodeStub.env.remoteName = undefined;
   commands.clear(); panels.length = 0; logViews.length = 0; viewProvider = undefined; executed.length = 0; errors.length = 0; infos.length = 0; pickQueue.length = 0; pickerCalls = 0;
@@ -160,7 +164,7 @@ async function fixture(task: (git: Git, root: string) => Promise<void>): Promise
     };
     activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] });
     await task(git, root);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally { setLocale('zh-cn'); await rm(root, { recursive: true, force: true }); }
 }
 
 test('explicit editor preference retains a persistent comparison view without native editor migration', async () => fixture(async () => {
@@ -469,7 +473,8 @@ test('directory comparison opens the SCM tree and a tracked native comparison ta
   assert.deepEqual(treeReveals.at(-1)!.options, { focus: true, select: false, expand: true });
   const manifest = JSON.parse(await readFile(path.resolve(__dirname, '../../package.json'), 'utf8'));
   assert.equal(manifest.contributes.views.scm[0].id, 'gitWorkbench.compareFiles');
-  assert.equal(manifest.contributes.views.scm[0].name, '对比');
+  const strings = JSON.parse(await readFile(path.resolve(__dirname, '../../package.nls.zh-cn.json'), 'utf8'));
+  assert.equal(strings[manifest.contributes.views.scm[0].name.slice(1, -1)], '对比');
   assert.equal(manifest.contributes.views.scm[0].when, 'gitWorkbench.comparisonActive');
   assert.equal(manifest.contributes.views.scm[0].visibility, 'collapsed');
   assert.equal(comparisonProvider!.getTreeItem(nodes[0]).description, undefined);
@@ -776,3 +781,38 @@ test('invalid folder selection still reports real Git discovery errors', async (
     assert.equal(errors.length, 1); assert.match(errors[0], /Git Workbench:/);
   } finally { await rm(nonRepository, { recursive: true, force: true }); }
 }));
+
+
+test('English application locale localizes menus and confirmations without changing branch names', async () => fixture(async git => {
+  await commands.get('gitWorkbench.menu')!();
+  assert.ok(quickPicks[0].labels.includes('$(history) History and blame'));
+  pickQueue.push({ label: 'Branches', ids: ['branchCreate'] }, { id: 'branchCreate' });
+  inputQueue.push('功能/支付'); warningQueue.push('Run');
+  await commands.get('gitWorkbench.operations')!();
+  assert.deepEqual(errors, []);
+  assert.match(warnings[0], /Create branch 功能\/支付 from [a-f0-9]+/);
+  assert.deepEqual(confirmationButtons[0], ['Run']);
+  assert.equal((await git.refs()).some(ref => ref.name === '功能/支付'), true);
+  assert.equal(quickPicks.at(-2)?.title, 'Git Workbench · Git operations');
+}, 'en-US'));
+
+test('English graph and history bootstrap preserve repository text and localized dirty-selection notices', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), '中文代码\ncontext\n'); await git.mutate(['commit', '-am', '修复配置']);
+  await commands.get('gitWorkbench.open')!();
+  assert.match(logViews[0].webview.html, /lang="en"/);
+  assert.match(logViews[0].webview.html, /window.gitWorkbenchLanguage="en"/);
+  assert.ok(logViews[0].webview.html.indexOf('i18n.js') < logViews[0].webview.html.indexOf('workbench.js'));
+  await commands.get('gitWorkbench.fileHistory')!(); await panels[0].listener!({ type: 'init' });
+  assert.match(panels[0].webview.html, /lang="en"/);
+  const entries = panels[0].messages.find(message => message.type === 'history')!.data!.entries as { subject: string }[];
+  assert.equal(entries[0].subject, '修复配置');
+  const details = await git.lineHistoryDetails('code.txt', 1, 1, '本地改动\ncontext\n');
+  assert.match(details.notice!, /^Selection lines 1–1 map to/);
+  assert.ok(details.entries.some(entry => entry.subject === '修复配置'));
+}, 'en'));
+
+test('unsupported UI languages fall back to English host errors', async () => fixture(async () => {
+  windowStub.activeTextEditor = undefined;
+  await commands.get('gitWorkbench.fileHistory')!();
+  assert.deepEqual(errors, ['Git Workbench: Open a repository file in the editor first.']);
+}, 'fr'));

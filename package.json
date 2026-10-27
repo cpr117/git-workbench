@@ -2,11 +2,16 @@
   "name": "git-workbench",
   "displayName": "Git Workbench",
   "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "publisher": "local-tools",
-  "repository": { "type": "git", "url": "https://github.com/cpr117/git-workbench.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cpr117/git-workbench.git"
+  },
   "homepage": "https://github.com/cpr117/git-workbench",
-  "bugs": { "url": "https://github.com/cpr117/git-workbench/issues" },
+  "bugs": {
+    "url": "https://github.com/cpr117/git-workbench/issues"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.95.0"
@@ -41,7 +46,7 @@
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "build:native": "node scripts/build-native.mjs",
-    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.12.1.vsix"
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.13.0.vsix"
   },
   "contributes": {
     "viewsContainers": {
@@ -65,8 +70,8 @@
       "scm": [
         {
           "id": "gitWorkbench.compareFiles",
-          "name": "对比",
-          "contextualTitle": "Git Workbench 对比",
+          "name": "%contributes.views.scm.0.name%",
+          "contextualTitle": "%contributes.views.scm.0.contextualTitle%",
           "icon": "media/git.svg",
           "visibility": "collapsed",
           "when": "gitWorkbench.comparisonActive"
@@ -84,10 +89,10 @@
           ],
           "default": "popup",
           "enumDescriptions": [
-            "macOS 本地原生历史小弹窗，不创建编辑器标签页。",
-            "使用编辑器历史标签页，适用于其他平台和远程工作区。"
+            "%contributes.configuration.properties.gitWorkbench.historyPresentation.enumDescriptions.0%",
+            "%contributes.configuration.properties.gitWorkbench.historyPresentation.enumDescriptions.1%"
           ],
-          "description": "选区 / 文件历史的展示方式。默认原生小弹窗；不支持的平台不会自动改为标签页。"
+          "description": "%contributes.configuration.properties.gitWorkbench.historyPresentation.description%"
         },
         "gitWorkbench.comparisonViewMode": {
           "type": "string",
@@ -97,10 +102,10 @@
           ],
           "default": "tree",
           "enumDescriptions": [
-            "按项目 / 目录层级展示变更文件。",
-            "平铺展示变更文件，并显示所属目录。"
+            "%contributes.configuration.properties.gitWorkbench.comparisonViewMode.enumDescriptions.0%",
+            "%contributes.configuration.properties.gitWorkbench.comparisonViewMode.enumDescriptions.1%"
           ],
-          "description": "源代码管理中“对比”的文件展示方式，也可在该视图的更多操作菜单中切换。"
+          "description": "%contributes.configuration.properties.gitWorkbench.comparisonViewMode.description%"
         },
         "gitWorkbench.comparisonSortOrder": {
           "type": "string",
@@ -111,101 +116,101 @@
           ],
           "default": "path",
           "enumDescriptions": [
-            "按路径排序。",
-            "按文件名称排序。",
-            "按 Git 状态排序，相同状态再按路径排序。"
+            "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.enumDescriptions.0%",
+            "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.enumDescriptions.1%",
+            "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.enumDescriptions.2%"
           ],
-          "description": "对比文件的排序方式；树形模式始终将目录排在文件前。"
+          "description": "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.description%"
         }
       }
     },
     "commands": [
       {
         "command": "gitWorkbench.menu",
-        "title": "打开功能菜单",
+        "title": "%contributes.commands.0.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.open",
-        "title": "打开提交图",
+        "title": "%contributes.commands.1.title%",
         "category": "Git Workbench",
         "icon": "$(git-merge)"
       },
       {
         "command": "gitWorkbench.selectionHistory",
-        "title": "查看选区 / 当前行历史",
+        "title": "%contributes.commands.2.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.fileHistory",
-        "title": "查看文件历史",
+        "title": "%contributes.commands.3.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.blame",
-        "title": "查看当前行提交",
+        "title": "%contributes.commands.4.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.toggleBlame",
-        "title": "切换逐行作者标注",
+        "title": "%contributes.commands.5.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.operations",
-        "title": "Git 操作",
+        "title": "%contributes.commands.6.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.stageSelection",
-        "title": "暂存选中代码块",
+        "title": "%contributes.commands.7.title%",
         "category": "Git Workbench"
       },
       {
         "command": "gitWorkbench.explorer.commit",
-        "title": "提交目录…",
+        "title": "%contributes.commands.8.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.add",
-        "title": "添加到暂存区",
+        "title": "%contributes.commands.9.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.exclude",
-        "title": ".git/info/exclude（本地排除）…",
+        "title": "%contributes.commands.10.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.diff",
-        "title": "显示差异",
+        "title": "%contributes.commands.11.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.compareRevision",
-        "title": "与指定版本比较…",
+        "title": "%contributes.commands.12.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.compareBranch",
-        "title": "与分支比较…",
+        "title": "%contributes.commands.13.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.history",
-        "title": "显示历史",
+        "title": "%contributes.commands.14.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.rollback",
-        "title": "回滚目录到 HEAD…",
+        "title": "%contributes.commands.15.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
@@ -217,7 +222,7 @@
       },
       {
         "command": "gitWorkbench.explorer.pull",
-        "title": "Pull（仅快进）…",
+        "title": "%contributes.commands.17.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
@@ -241,19 +246,19 @@
       },
       {
         "command": "gitWorkbench.explorer.branches",
-        "title": "Branches（管理分支）…",
+        "title": "%contributes.commands.21.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.newBranch",
-        "title": "新建分支…",
+        "title": "%contributes.commands.22.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.newTag",
-        "title": "新建标签…",
+        "title": "%contributes.commands.23.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
@@ -265,19 +270,19 @@
       },
       {
         "command": "gitWorkbench.explorer.stash",
-        "title": "Stash 所选目录…",
+        "title": "%contributes.commands.25.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.unstash",
-        "title": "Unstash（所属仓库）…",
+        "title": "%contributes.commands.26.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.explorer.remotes",
-        "title": "管理远端…",
+        "title": "%contributes.commands.27.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
@@ -289,57 +294,57 @@
       },
       {
         "command": "gitWorkbench.compare.refresh",
-        "title": "刷新目录比较",
+        "title": "%contributes.commands.29.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted",
         "icon": "$(refresh)"
       },
       {
         "command": "gitWorkbench.compare.search",
-        "title": "筛选变更目录",
+        "title": "%contributes.commands.30.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted",
         "icon": "$(search)"
       },
       {
         "command": "gitWorkbench.compare.select",
-        "title": "预览对比文件",
+        "title": "%contributes.commands.31.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "gitWorkbench.compare.viewTree",
-        "title": "以树形展示",
+        "title": "%contributes.commands.32.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != tree"
       },
       {
         "command": "gitWorkbench.compare.viewList",
-        "title": "以列表展示",
+        "title": "%contributes.commands.33.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != list"
       },
       {
         "command": "gitWorkbench.compare.sort.name",
-        "title": "按名称排序",
+        "title": "%contributes.commands.34.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != name"
       },
       {
         "command": "gitWorkbench.compare.sort.path",
-        "title": "按路径排序",
+        "title": "%contributes.commands.35.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != path"
       },
       {
         "command": "gitWorkbench.compare.sort.status",
-        "title": "按状态排序",
+        "title": "%contributes.commands.36.title%",
         "category": "Git Workbench",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != status"
       },
       {
         "command": "gitWorkbench.compare.close",
-        "title": "关闭对比",
+        "title": "%contributes.commands.37.title%",
         "category": "Git Workbench",
         "enablement": "gitWorkbench.comparisonActive"
       }
@@ -722,7 +727,7 @@
     "viewsWelcome": [
       {
         "view": "gitWorkbench.compareFiles",
-        "contents": "右键文件夹或项目，选择 **Git → 显示差异**、**与指定版本比较** 或 **与分支比较**。"
+        "contents": "%contributes.viewsWelcome.0.contents%"
       }
     ]
   },

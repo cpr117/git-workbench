@@ -1,9 +1,10 @@
+import { t, setLocale, getLocale } from './i18n';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Change, Commit, Filters, Git, Ref, SelectedChange, graphRows, assertHash } from './git';
-import { actions, confirm, isConflict, operationGroups, perform } from './operations';
+import { getActions, confirm, isConflict, getOperationGroups, perform } from './operations';
 import { openHistoryView } from './historyView';
 import { inScope } from './explorerGit';
 import { DirectoryComparison } from './directoryCompare';
@@ -46,7 +47,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
 
   private setRepository(git: Git): void {
     if (this.git?.root !== git.root) {
-      if (this.busy) throw new Error('请等待当前 Git 操作完成再切换仓库。');
+      if (this.busy) throw new Error(t("请等待当前 Git 操作完成再切换仓库。"));
       this.filters = { limit: 200 }; this.detail = undefined; this.refs = []; this.visibleCommits = [];
       this.pendingHash = undefined;
       this.generation++; this.detailGeneration++; this.send('reset', null);
@@ -55,12 +56,12 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   }
 
   async repository(uri?: vscode.Uri): Promise<Git> {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任此工作区。');
+    if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
     const directories = new Set<string>();
     if (uri?.scheme === 'file') directories.add(path.dirname(uri.fsPath));
     if (!uri && vscode.window.activeTextEditor?.document.uri.scheme === 'file') directories.add(path.dirname(vscode.window.activeTextEditor.document.uri.fsPath));
     if (uri) {
-      if (uri.scheme !== 'file') throw new Error('请选择本地工作区中的文件或目录。');
+      if (uri.scheme !== 'file') throw new Error(t("请选择本地工作区中的文件或目录。"));
       const found = await Git.discover((await lstat(uri.fsPath)).isDirectory() ? uri.fsPath : path.dirname(uri.fsPath));
       return new Git(found.root, text => output.appendLine(text));
     }
@@ -75,11 +76,11 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     }
     if (repositories.size === 1) return [...repositories.values()][0];
     if (repositories.size > 1) {
-      const pick = await vscode.window.showQuickPick([...repositories].map(([root, git]) => ({ label: path.basename(root), description: root, git })), { placeHolder: '选择 Git 仓库' });
+      const pick = await vscode.window.showQuickPick([...repositories].map(([root, git]) => ({ label: path.basename(root), description: root, git })), { placeHolder: t("选择 Git 仓库") });
       if (pick) return pick.git;
       throw new vscode.CancellationError();
     }
-    const folders = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: '打开 Git 仓库' });
+    const folders = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: t("打开 Git 仓库") });
     if (!folders?.[0]) throw new vscode.CancellationError();
     const found = await Git.discover(folders[0].fsPath);
     return new Git(found.root, text => output.appendLine(text));
@@ -112,7 +113,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(18).toString('hex');
     const media = (file: string) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', file));
-    return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Git Workbench</title></head><body><div id="app"></div><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
+    return `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Git Workbench</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};</script><script nonce="${nonce}" src="${media('i18n.js')}"></script><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
   }
 
   private send(type: string, data: unknown): void { void this.panel?.webview.postMessage({ type, data }); }
@@ -120,7 +121,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (error instanceof vscode.CancellationError) return;
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(message); this.send('error', message);
-    void vscode.window.showErrorMessage(`Git Workbench: ${message}`, '查看日志').then(choice => { if (choice) output.show(); });
+    void vscode.window.showErrorMessage(`Git Workbench: ${message}`, t("查看日志")).then(choice => { if (choice) output.show(); });
   }
 
   async refresh(): Promise<void> {
@@ -153,11 +154,11 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   private async operation(action: string, hash?: string): Promise<void> {
     if (!this.git) return;
     const git = this.git;
-    await this.runTask(git, actions[action] || action, () => perform(git, action, hash));
+    await this.runTask(git, getActions()[action] || action, () => perform(git, action, hash));
   }
 
   async runTask(git: Git, title: string, task: () => Promise<void>): Promise<void> {
-    if (this.busy) throw new Error('请等待当前 Git 操作完成。');
+    if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
     this.setRepository(git);
     this.busy = true; this.send('operating', true);
     try { await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title }, task); }
@@ -169,12 +170,12 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (!this.git) this.setRepository(await this.repository());
     const source = this.git;
     for (;;) {
-      const group = await vscode.window.showQuickPick(operationGroups, { title: 'Git Workbench · Git 操作', placeHolder: hash ? `提交 ${hash.slice(0, 8)} · 选择功能分类` : '选择功能分类；提交操作默认以 HEAD 为目标' });
+      const group = await vscode.window.showQuickPick(getOperationGroups(), { title: t("Git Workbench · Git 操作"), placeHolder: hash ? t("提交 {0} · 选择功能分类", hash.slice(0, 8)) : t("选择功能分类；提交操作默认以 HEAD 为目标") });
       if (!group) return;
-      const pick = await vscode.window.showQuickPick([{ label: '$(arrow-left) 返回功能分类', id: 'back' }, ...group.ids.map(id => ({ label: actions[id], id }))], { title: `Git Workbench · ${group.label}`, placeHolder: '选择操作' });
+      const pick = await vscode.window.showQuickPick([{ label: t("$(arrow-left) 返回功能分类"), id: 'back' }, ...group.ids.map(id => ({ label: getActions()[id], id }))], { title: `Git Workbench · ${group.label}`, placeHolder: t("选择操作") });
       if (!pick) return;
       if (pick.id === 'back') continue;
-      if (source !== this.git) throw new Error('仓库已切换，请重新选择操作。');
+      if (source !== this.git) throw new Error(t("仓库已切换，请重新选择操作。"));
       await this.operation(pick.id, hash); return;
     }
   }
@@ -183,8 +184,8 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     const git = this.git; if (!git) return;
     git.file(relative);
     const file = (await git.status()).find(change => change.path === relative);
-    if (git !== this.git) throw new Error('仓库已切换，请刷新后重试。');
-    if (!file) throw new Error('文件状态已改变，请刷新。');
+    if (git !== this.git) throw new Error(t("仓库已切换，请刷新后重试。"));
+    if (!file) throw new Error(t("文件状态已改变，请刷新。"));
     if (action === 'open') { await vscode.window.showTextDocument(vscode.Uri.file(git.file(relative))); return; }
     if (action === 'diff') {
       if (isConflict(file.status)) {
@@ -192,20 +193,20 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
         const stages = unmerged.split('\0').filter(Boolean).map(entry => entry.split('\t')[0].split(' ')[2]);
         const left = revisionUri({ git, ref: ':2', file: relative, empty: !stages.includes('2') });
         const right = revisionUri({ git, ref: ':3', file: relative, empty: !stages.includes('3') });
-        await vscode.commands.executeCommand('vscode.diff', left, right, `${relative} · Ours ↔ Theirs（在工作区文件中解决后暂存）`);
+        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · Ours ↔ Theirs（在工作区文件中解决后暂存）", relative));
       } else if (area === 'index') {
         const head = await git.head();
         const left = revisionUri({ git, ref: head || '', file: file.oldPath || relative, empty: !head || file.index === 'A' });
         const right = revisionUri({ git, ref: ':0', file: relative, empty: file.index === 'D' });
-        await vscode.commands.executeCommand('vscode.diff', left, right, `${relative} · HEAD ↔ 暂存区`);
+        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · HEAD ↔ 暂存区", relative));
       } else {
         const left = revisionUri({ git, ref: ':0', file: relative, empty: file.index === '?' });
         const right = file.worktree === 'D' ? revisionUri({ git, ref: '', file: relative, empty: true }) : vscode.Uri.file(git.file(relative));
-        await vscode.commands.executeCommand('vscode.diff', left, right, `${relative} · 暂存区 ↔ 工作区`);
+        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · 暂存区 ↔ 工作区", relative));
       }
       return;
     }
-    if (this.busy) throw new Error('请等待当前 Git 操作完成。');
+    if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
     this.busy = true; this.send('operating', true);
     try {
       switch (action) {
@@ -215,11 +216,11 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
           else await git.mutate(['rm', '--cached', '-f', '--', relative]);
           break;
         case 'discard':
-          if (file.index === '?') throw new Error('未跟踪文件请在资源管理器中删除；此处不会永久删除新文件。');
-          if (isConflict(file.status)) throw new Error('冲突文件请在编辑器解决，或使用“中止”操作。');
-          if (await confirm(`丢弃 ${relative} 的未暂存改动，恢复为暂存区版本？`)) await git.mutate(['restore', '--worktree', '--', relative]);
+          if (file.index === '?') throw new Error(t("未跟踪文件请在资源管理器中删除；此处不会永久删除新文件。"));
+          if (isConflict(file.status)) throw new Error(t("冲突文件请在编辑器解决，或使用“中止”操作。"));
+          if (await confirm(t("丢弃 {0} 的未暂存改动，恢复为暂存区版本？", relative))) await git.mutate(['restore', '--worktree', '--', relative]);
           break;
-        default: throw new Error('无效的文件操作。');
+        default: throw new Error(t("无效的文件操作。"));
       }
     } finally { this.busy = false; this.send('operating', false); await this.refresh(); }
   }
@@ -241,20 +242,20 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
       case 'branchAction': {
         if (typeof msg.ref !== 'string' || typeof msg.action !== 'string') return;
         const expected = this.refs.find(ref => ref.full === msg.ref);
-        if (!expected) throw new Error('请选择分支树中存在的分支或标签。');
-        if (this.busy) throw new Error('请等待当前 Git 操作完成。');
+        if (!expected) throw new Error(t("请选择分支树中存在的分支或标签。"));
+        if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
         const git = this.git, head = this.branchHead, branch = this.branchName;
         if (msg.action === 'compare' || msg.action === 'workingDiff') {
           const { ref, hash } = await branchTarget(git, expected);
           const current = await git.head();
-          if (!current || current !== head) throw new Error('当前 HEAD 已改变，请刷新后重试。');
+          if (!current || current !== head) throw new Error(t("当前 HEAD 已改变，请刷新后重试。"));
           if (git !== this.git) return;
           // Branch-tree comparisons always cover the repository, ignoring log path filters.
           await this.comparison.open(git, '', hash, {
             target: msg.action === 'compare' ? current : undefined,
-            baseLabel: ref.name, targetLabel: msg.action === 'compare' ? 'HEAD' : '工作区',
+            baseLabel: ref.name, targetLabel: msg.action === 'compare' ? 'HEAD' : t("工作区"),
           });
-        } else await this.runTask(git, 'Git 分支操作', () => performBranch(git, msg.action as string, expected, head, branch));
+        } else await this.runTask(git, t("Git 分支操作"), () => performBranch(git, msg.action as string, expected, head, branch));
         break;
       }
       case 'filters': {
@@ -264,7 +265,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
         for (const key of ['ref', 'search', 'author', 'path', 'since', 'until'] as const) {
           if (typeof value[key] === 'string') next[key] = value[key].slice(0, 1000);
         }
-        if (next.ref && next.ref !== 'HEAD' && !this.refs.some(ref => ref.full === next.ref)) throw new Error('请选择存在的分支。');
+        if (next.ref && next.ref !== 'HEAD' && !this.refs.some(ref => ref.full === next.ref)) throw new Error(t("请选择存在的分支。"));
         this.filters = next; await this.refresh(); break;
       }
       case 'select': if (typeof msg.hash === 'string') await this.select(msg.hash, typeof msg.parent === 'string' ? msg.parent : undefined); break;
@@ -277,12 +278,12 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
         const generation = ++this.detailGeneration, git = this.git;
         const hashes = new Set(msg.hashes as string[]);
         const ordered = this.visibleCommits.filter(commit => hashes.has(commit.hash));
-        if (!hashes.size || hashes.size > 300 || ordered.length !== hashes.size) throw new Error('请选中当前提交列表中的 1–300 个版本。');
+        if (!hashes.size || hashes.size > 300 || ordered.length !== hashes.size) throw new Error(t("请选中当前提交列表中的 1–300 个版本。"));
         const details = await git.commitSelection(ordered.map(commit => commit.hash));
         if (generation !== this.detailGeneration || git !== this.git) return;
         if (this.filters.path) details.files = details.files.filter(file => inScope(file.path, this.filters.path!) || !!file.oldPath && inScope(file.oldPath, this.filters.path!));
         this.detail = details;
-        this.send('detail', { ...details, aggregate: true, compare: true, message: `所选 ${details.commits.length} 个提交 · 区间累计差异（含最旧提交）` }); break;
+        this.send('detail', { ...details, aggregate: true, compare: true, message: t("所选 {0} 个提交 · 区间累计差异（含最旧提交）", details.commits.length) }); break;
       }
       case 'compare': {
         if (typeof msg.base !== 'string' || typeof msg.target !== 'string') return;
@@ -299,13 +300,13 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
       case 'copy': if (typeof msg.hash === 'string') await vscode.env.clipboard.writeText(assertHash(msg.hash)); break;
       case 'working': if (typeof msg.action === 'string' && typeof msg.path === 'string') await this.working(msg.action, msg.path, typeof msg.area === 'string' ? msg.area : undefined); break;
       case 'restore': {
-        if (this.busy) throw new Error('请等待当前 Git 操作完成。');
+        if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
         const file = this.detail?.files.find(item => item.path === msg.path);
         if (!file || !this.detail || 'commitHash' in file) return;
         const target = this.detail.target, git = this.git;
         this.busy = true; this.send('operating', true);
         try {
-          if (await confirm(`将 ${git.root} 中的 ${file.path} 恢复到 ${target.slice(0, 8)}？现有文件内容会被覆盖，暂存区不变。`)) await git.mutate(['restore', `--source=${target}`, '--worktree', '--', file.path]);
+          if (await confirm(t("将 {0} 中的 {1} 恢复到 {2}？现有文件内容会被覆盖，暂存区不变。", git.root, file.path, target.slice(0, 8)))) await git.mutate(['restore', `--source=${target}`, '--worktree', '--', file.path]);
         } finally { this.busy = false; this.send('operating', false); await this.refresh(); }
         break;
       }
@@ -314,15 +315,16 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  setLocale(vscode.env.language);
   output = vscode.window.createOutputChannel('Git Workbench');
   const blameDecoration = vscode.window.createTextEditorDecorationType({ before: { color: new vscode.ThemeColor('editorLineNumber.foreground'), margin: '0 2em 0 0', fontStyle: 'normal' } });
   const decorated = new Set<string>();
   const register = (id: string, callback: (...args: unknown[]) => Promise<unknown>) => context.subscriptions.push(vscode.commands.registerCommand(id, (...args: unknown[]) => callback(...args).catch(error => { if (error instanceof vscode.CancellationError) return; output.appendLine(String(error)); void vscode.window.showErrorMessage(`Git Workbench: ${error instanceof Error ? error.message : String(error)}`); })));
   const comparison = new DirectoryComparison(async (repo, revision, file, target) => {
-    const left = revisionUri({ git: repo, ref: revision, file: file?.oldPath || file?.path || '对比', empty: !file || file.status[0] === 'A' });
-    const right = !file || file.status[0] === 'D' ? revisionUri({ git: repo, ref: '', file: file?.path || '对比', empty: true })
+    const left = revisionUri({ git: repo, ref: revision, file: file?.oldPath || file?.path || t("对比"), empty: !file || file.status[0] === 'A' });
+    const right = !file || file.status[0] === 'D' ? revisionUri({ git: repo, ref: '', file: file?.path || t("对比"), empty: true })
       : target ? revisionUri({ git: repo, ref: target, file: file.path }) : vscode.Uri.file(repo.file(file.path));
-    await vscode.commands.executeCommand('vscode.diff', left, right, `对比 · ${file?.path || '无变更'} · ${revision.slice(0, 8)} ↔ ${target?.slice(0, 8) || '工作区'}`, { preview: true, preserveFocus: true });
+    await vscode.commands.executeCommand('vscode.diff', left, right, t("对比 · {0} · {1} ↔ {2}", file?.path || t("无变更"), revision.slice(0, 8), target?.slice(0, 8) || t("工作区")), { preview: true, preserveFocus: true });
     return { original: left, modified: right };
   });
   const workbench = new Workbench(context, comparison);
@@ -345,25 +347,25 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const editor = () => {
     const active = vscode.window.activeTextEditor;
-    if (!active || active.document.uri.scheme !== 'file') throw new Error('请先在编辑器中打开仓库内的文件。');
+    if (!active || active.document.uri.scheme !== 'file') throw new Error(t("请先在编辑器中打开仓库内的文件。"));
     return active;
   };
   register('gitWorkbench.menu', async () => {
     for (;;) {
       const group = await vscode.window.showQuickPick([
-        { label: '$(git-merge) 提交图与工作区', command: 'gitWorkbench.open' },
-        { label: '$(history) 历史与追溯', command: 'history' },
-        { label: '$(tools) Git 操作', command: 'gitWorkbench.operations' },
-      ], { title: 'Git Workbench', placeHolder: '选择功能分类' });
+        { label: t("$(git-merge) 提交图与工作区"), command: 'gitWorkbench.open' },
+        { label: t("$(history) 历史与追溯"), command: 'history' },
+        { label: t("$(tools) Git 操作"), command: 'gitWorkbench.operations' },
+      ], { title: 'Git Workbench', placeHolder: t("选择功能分类") });
       if (!group) return;
       if (group.command !== 'history') { await vscode.commands.executeCommand(group.command); return; }
       const choice = await vscode.window.showQuickPick([
-        { label: '$(arrow-left) 返回功能分类', command: 'back' },
-        { label: '查看选区 / 当前行历史', command: 'gitWorkbench.selectionHistory' },
-        { label: '查看文件历史', command: 'gitWorkbench.fileHistory' },
-        { label: '查看当前行提交', command: 'gitWorkbench.blame' },
-        { label: '切换逐行作者标注', command: 'gitWorkbench.toggleBlame' },
-      ], { title: 'Git Workbench · 历史与追溯', placeHolder: '选择历史功能' });
+        { label: t("$(arrow-left) 返回功能分类"), command: 'back' },
+        { label: t("查看选区 / 当前行历史"), command: 'gitWorkbench.selectionHistory' },
+        { label: t("查看文件历史"), command: 'gitWorkbench.fileHistory' },
+        { label: t("查看当前行提交"), command: 'gitWorkbench.blame' },
+        { label: t("切换逐行作者标注"), command: 'gitWorkbench.toggleBlame' },
+      ], { title: t("Git Workbench · 历史与追溯"), placeHolder: t("选择历史功能") });
       if (!choice) return;
       if (choice.command === 'back') continue;
       await vscode.commands.executeCommand(choice.command); return;
@@ -374,7 +376,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register('gitWorkbench.fileHistory', async (value) => {
     const uri = value instanceof vscode.Uri ? value : editor().document.uri;
     const git = await workbench.repository(uri), file = git.relative(uri.fsPath);
-    const history = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: '读取文件历史' }, () => git.fileHistoryDetails(file));
+    const history = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: t("读取文件历史") }, () => git.fileHistoryDetails(file));
     await openHistoryView(context, git, history, file, undefined, (repo, hash) => workbench.open(repo, hash));
   });
   register('gitWorkbench.selectionHistory', async () => {
@@ -383,25 +385,25 @@ export function activate(context: vscode.ExtensionContext): void {
     const git = await workbench.repository(uri), file = git.relative(uri.fsPath);
     const start = selection.start.line + 1;
     const end = !selection.isEmpty && selection.end.character === 0 ? selection.end.line : selection.end.line + 1;
-    const history = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: '追溯选区历史' }, () => git.lineHistoryDetails(file, start, Math.max(start, end), contents));
+    const history = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: t("追溯选区历史") }, () => git.lineHistoryDetails(file, start, Math.max(start, end), contents));
     await openHistoryView(context, git, history.entries, file, { start, end: Math.max(start, end), notice: history.notice }, (repo, hash) => workbench.open(repo, hash));
   });
   register('gitWorkbench.blame', async () => {
     const active = editor(), git = await workbench.repository(active.document.uri);
     const lines = await git.blame(git.relative(active.document.uri.fsPath), active.document.getText());
     const line = lines.find(item => item.line === active.selection.active.line + 1);
-    if (!line) throw new Error('当前行没有可追溯的内容。');
-    if (/^0+$/.test(line.hash)) { void vscode.window.showInformationMessage('当前行尚未提交。'); return; }
-    const choice = await vscode.window.showInformationMessage(`${line.author} · ${line.hash.slice(0, 8)} · ${line.summary}`, '查看提交');
+    if (!line) throw new Error(t("当前行没有可追溯的内容。"));
+    if (/^0+$/.test(line.hash)) { void vscode.window.showInformationMessage(t("当前行尚未提交。")); return; }
+    const choice = await vscode.window.showInformationMessage(`${line.author} · ${line.hash.slice(0, 8)} · ${line.summary}`, t("查看提交"));
     if (choice) await workbench.open(git, line.hash);
   });
   register('gitWorkbench.toggleBlame', async () => {
     const active = editor(), key = active.document.uri.toString();
     if (decorated.delete(key)) { active.setDecorations(blameDecoration, []); return; }
-    if (active.document.lineCount > 10000) throw new Error('大于 10,000 行的文件请使用“查看当前行提交”。');
+    if (active.document.lineCount > 10000) throw new Error(t("大于 10,000 行的文件请使用“查看当前行提交”。"));
     const git = await workbench.repository(active.document.uri);
     const lines = await git.blame(git.relative(active.document.uri.fsPath), active.document.getText());
-    active.setDecorations(blameDecoration, lines.map(line => ({ range: new vscode.Range(line.line - 1, 0, line.line - 1, 0), renderOptions: { before: { contentText: /^0+$/.test(line.hash) ? '未提交' : `${line.hash.slice(0, 7)} ${line.author}` } }, hoverMessage: line.summary })));
+    active.setDecorations(blameDecoration, lines.map(line => ({ range: new vscode.Range(line.line - 1, 0, line.line - 1, 0), renderOptions: { before: { contentText: /^0+$/.test(line.hash) ? t("未提交") : `${line.hash.slice(0, 7)} ${line.author}` } }, hoverMessage: line.summary })));
     decorated.add(key);
   });
   register('gitWorkbench.stageSelection', async () => { editor(); await vscode.commands.executeCommand('git.stageSelectedRanges'); });
@@ -414,16 +416,16 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('git-workbench', {
     provideTextDocumentContent: async uri => {
       const revision = revisions.get(uri.toString());
-      if (!revision) throw new Error('版本视图已失效，请重新打开。');
+      if (!revision) throw new Error(t("版本视图已失效，请重新打开。"));
       if (revision.text !== undefined) return revision.text;
       if (revision.empty) return '';
       const content = await revision.git.content(revision.ref, revision.file);
-      if (content.includes('\0')) throw new Error('此文件是二进制内容，请使用原生 Git / 专用查看器。');
+      if (content.includes('\0')) throw new Error(t("此文件是二进制内容，请使用原生 Git / 专用查看器。"));
       return content;
     },
   }));
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 20);
-  status.text = '$(git-merge) Git Workbench'; status.command = 'gitWorkbench.open'; status.tooltip = '打开提交图与 Git 操作'; status.show();
+  status.text = '$(git-merge) Git Workbench'; status.command = 'gitWorkbench.open'; status.tooltip = t("打开提交图与 Git 操作"); status.show();
   context.subscriptions.push(status, blameDecoration, output, workbench);
 }
 

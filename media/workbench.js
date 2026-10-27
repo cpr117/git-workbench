@@ -1,6 +1,9 @@
-/* global acquireVsCodeApi, GitSelection, GitLogModel */
+/* global acquireVsCodeApi, GitSelection, GitLogModel, GitWorkbenchI18n */
 'use strict';
 (() => {
+  const language = GitWorkbenchI18n.normalizeLocale(window.gitWorkbenchLanguage || 'zh-cn');
+  document.documentElement.lang = language;
+  const t = GitWorkbenchI18n.createTranslator(language);
   const vscode = acquireVsCodeApi();
   const saved = vscode.getState() || {};
   const state = { snapshot: null, detail: null, selected: saved.selected, compared: saved.hashes || [], anchor: saved.selected, tab: saved.tab || 'history', loading: false, operating: false, collapsed: new Set(saved.collapsed || []), panes: saved.panes || {} };
@@ -22,36 +25,36 @@
   $('app').innerHTML = `
     <header class="topbar">
       <strong class="git-label">Git</strong>
-      <nav class="tabs" aria-label="工作区视图"><button id="history-tab" role="tab">Log: 全部分支</button><button id="working-tab" role="tab">工作区 <span id="changes-count">0</span></button></nav>
-      <button id="repo" class="repo" title="切换仓库">选择仓库</button><span id="branch-state"></span>
-      <div class="top-actions"><span id="busy" role="status"></span><button id="continue" hidden>继续操作</button><button id="abort" hidden>中止</button><button id="refresh" title="刷新">↻</button><button id="operations">Git 操作 ▾</button></div>
+      <nav class="tabs" aria-label="${t("工作区视图")}"><button id="history-tab" role="tab">Log: ${t("全部分支")}</button><button id="working-tab" role="tab">${t("工作区")} <span id="changes-count">0</span></button></nav>
+      <button id="repo" class="repo" title="${t("切换仓库")}">${t("选择仓库")}</button><span id="branch-state"></span>
+      <div class="top-actions"><span id="busy" role="status"></span><button id="continue" hidden>${t("继续操作")}</button><button id="abort" hidden>${t("中止")}</button><button id="refresh" title="${t("刷新")}">↻</button><button id="operations">Git ${t("操作 ▾")}</button></div>
     </header>
-    <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss" aria-label="关闭提示">×</button></div>
+    <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss" aria-label="${t("关闭提示")}">×</button></div>
     <main id="history-view" class="history-layout">
-      <aside class="branches" aria-label="分支与标签"><div class="branch-search"><input id="branch-search" type="search" placeholder="Branch or tag" aria-label="搜索分支或标签"><button id="new-branch" title="从选中提交或 HEAD 创建分支">＋</button></div><div id="refs"></div></aside>
-      <div id="left-split" class="splitter" role="separator" tabindex="0" aria-label="调整分支目录宽度" aria-orientation="vertical"></div>
-      <section class="commit-pane" aria-label="提交图">
+      <aside class="branches" aria-label="${t("分支与标签")}"><div class="branch-search"><input id="branch-search" type="search" placeholder="Branch or tag" aria-label="${t("搜索分支或标签")}"><button id="new-branch" title="${t("从选中提交或 HEAD 创建分支")}">＋</button></div><div id="refs"></div></aside>
+      <div id="left-split" class="splitter" role="separator" tabindex="0" aria-label="${t("调整分支目录宽度")}" aria-orientation="vertical"></div>
+      <section class="commit-pane" aria-label="${t("提交图")}">
         <form id="filters" class="filters">
-          <input id="search" placeholder="搜索提交信息" aria-label="搜索提交信息">
-          <button type="button" id="filter-toggle" title="按作者、日期、路径筛选">User · Date · Paths ▾</button><button type="submit" title="应用筛选">搜索</button>
-          <div id="advanced" class="advanced" hidden><input id="author" placeholder="作者（Git 正则）" aria-label="作者"><input id="path" placeholder="路径，如 src/main.go" aria-label="文件或目录路径"><label>起始 <input id="since" type="date"></label><label>截止 <input id="until" type="date"></label></div>
+          <input id="search" placeholder="${t("搜索提交信息")}" aria-label="${t("搜索提交信息")}">
+          <button type="button" id="filter-toggle" title="${t("按作者、日期、路径筛选")}">User · Date · Paths ▾</button><button type="submit" title="${t("应用筛选")}">${t("搜索")}</button>
+          <div id="advanced" class="advanced" hidden><input id="author" placeholder="${t("作者（Git 正则）")}" aria-label="${t("作者")}"><input id="path" placeholder="${t("路径，如 src/main.go")}" aria-label="${t("文件或目录路径")}"><label>${t("起始")} <input id="since" type="date"></label><label>${t("截止")} <input id="until" type="date"></label></div>
         </form>
-        <div class="list-heading"><span id="history-count">等待加载</span><button id="compare" hidden>仅比两个快照</button><button id="clear-filters">清除筛选</button></div>
-        <div id="commits" class="commits" role="listbox" aria-multiselectable="true" aria-label="提交列表"></div>
-        <div class="list-footer"><button id="more">加载更多</button><span id="limit-note"></span></div>
+        <div class="list-heading"><span id="history-count">${t("等待加载")}</span><button id="compare" hidden>${t("仅比两个快照")}</button><button id="clear-filters">${t("清除筛选")}</button></div>
+        <div id="commits" class="commits" role="listbox" aria-multiselectable="true" aria-label="${t("提交列表")}"></div>
+        <div class="list-footer"><button id="more">${t("加载更多")}</button><span id="limit-note"></span></div>
       </section>
-      <div id="right-split" class="splitter" role="separator" tabindex="0" aria-label="调整变更详情宽度" aria-orientation="vertical"></div>
-      <aside class="details" id="details" aria-label="提交变更与详情">
-        <section id="changed-files" class="files-pane" aria-label="变更文件"><div class="empty-list">选择提交以查看变更文件</div></section>
-        <div id="detail-split" class="splitter horizontal" role="separator" tabindex="0" aria-label="调整文件与详情高度" aria-orientation="horizontal"></div>
-        <section id="commit-detail" class="info-pane" aria-label="提交详情"><div class="empty-list">Commit details</div></section>
+      <div id="right-split" class="splitter" role="separator" tabindex="0" aria-label="${t("调整变更详情宽度")}" aria-orientation="vertical"></div>
+      <aside class="details" id="details" aria-label="${t("提交变更与详情")}">
+        <section id="changed-files" class="files-pane" aria-label="${t("变更文件")}"><div class="empty-list">${t("选择提交以查看变更文件")}</div></section>
+        <div id="detail-split" class="splitter horizontal" role="separator" tabindex="0" aria-label="${t("调整文件与详情高度")}" aria-orientation="horizontal"></div>
+        <section id="commit-detail" class="info-pane" aria-label="${t("提交详情")}"><div class="empty-list">Commit details</div></section>
       </aside>
     </main>
     <main id="working-view" class="working-layout" hidden>
-      <section class="working-main"><div class="working-toolbar"><div><h1>工作区改动</h1><p>暂存、检查差异，然后提交。</p></div><div id="working-actions"></div></div><div id="working-files"></div></section>
-      <aside class="working-help"><div class="section-title">工作流</div><ol><li>点击文件打开原生 Diff。</li><li>暂存需要提交的文件。</li><li>点击“提交暂存区”。</li></ol><p>部分代码块：在编辑器选中代码，右键选择“暂存选中代码块”。</p><p>冲突：比较 Ours / Theirs，打开工作区文件解决后暂存，再继续操作。</p><div id="sync-actions"></div></aside>
+      <section class="working-main"><div class="working-toolbar"><div><h1>${t("工作区改动")}</h1><p>${t("暂存、检查差异，然后提交。")}</p></div><div id="working-actions"></div></div><div id="working-files"></div></section>
+      <aside class="working-help"><div class="section-title">${t("工作流")}</div><ol><li>${t("点击文件打开原生 Diff。")}</li><li>${t("暂存需要提交的文件。")}</li><li>${t("点击“提交暂存区”。")}</li></ol><p>${t("部分代码块：在编辑器选中代码，右键选择“暂存选中代码块”。")}</p><p>${t("冲突：比较 Ours / Theirs，打开工作区文件解决后暂存，再继续操作。")}</p><div id="sync-actions"></div></aside>
     </main>
-    <footer class="footer"><span id="root-path">本地 Git · 数据不上传</span><span>Shift 多选 · 右键提交操作</span></footer>
+    <footer class="footer"><span id="root-path">${t("本地 Git · 数据不上传")}</span><span>Shift ${t("多选 · 右键提交操作")}</span></footer>
     <div id="context-menu" class="context-menu" role="menu" hidden></div>`;
 
   function setTab(tab) {
@@ -100,7 +103,7 @@
     const focused = list.contains(document.activeElement) ? document.activeElement.dataset.hash : undefined;
     list.replaceChildren();
     const width = Math.max(36, ...graph.map(row => (Math.max(row.before.length, row.after.length) + 1) * 14));
-    if (!commits.length) list.append(make('div', 'empty-list', '没有匹配的提交。新仓库可先到工作区暂存并提交文件。'));
+    if (!commits.length) list.append(make('div', 'empty-list', t("没有匹配的提交。新仓库可先到工作区暂存并提交文件。")));
     commits.forEach((commit, index) => {
       const row = make('button', 'commit-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.dataset.hash = commit.hash; row.setAttribute('aria-selected', String(state.compared.includes(commit.hash)));
       row.style.setProperty('--graph-width', `${width}px`);
@@ -130,10 +133,10 @@
     });
     list.scrollTop = scroll;
     if (focused) [...list.children].find(child => child.dataset.hash === focused)?.focus({ preventScroll: true });
-    $('history-count').textContent = `${commits.length} 条提交 · 已选 ${state.compared.length}${filter.ref ? ' · ' + filter.ref.replace(/^refs\/(heads|remotes|tags)\//, '') : ' · 全部分支'}`;
+    $('history-count').textContent = t("{0} 条提交 · 已选 {1}{2}", commits.length, state.compared.length, filter.ref ? ' · ' + filter.ref.replace(/^refs\/(heads|remotes|tags)\//, '') : t(" · 全部分支"));
     $('compare').hidden = state.compared.length !== 2;
     $('more').hidden = commits.length < (filter.limit || 200) || (filter.limit || 200) >= 5000;
-    $('limit-note').textContent = (filter.limit || 200) >= 5000 ? '已显示最多 5,000 条，请使用筛选缩小范围' : '按拓扑顺序 · 按需加载';
+    $('limit-note').textContent = (filter.limit || 200) >= 5000 ? t("已显示最多 5,000 条，请使用筛选缩小范围") : t("按拓扑顺序 · 按需加载");
   }
   function renderRefs() {
     if (!state.snapshot) return;
@@ -142,8 +145,8 @@
     const entry = (parent, label, ref, icon, current = false) => {
       const item = button('', () => send('filters', { filters: { ...filters(), ref, limit: 200 } }), 'branch-item');
       item.append(make('span', 'branch-icon', icon), make('span', 'branch-name', label));
-      if (current) { item.classList.add('current'); item.title = '当前检出分支 · ' + ref; }
-      else item.title = ref || '显示全部引用';
+      if (current) { item.classList.add('current'); item.title = t("当前检出分支 · ") + ref; }
+      else item.title = ref || t("显示全部引用");
       const target = refs.find(value => value.full === ref) || (ref === 'HEAD' ? refs.find(value => value.current) : undefined);
       if (target) {
         item.setAttribute('aria-haspopup', 'menu');
@@ -158,7 +161,7 @@
       if ((filter.ref || '') === ref) item.classList.add('active'); parent.append(item);
     };
     entry(container, 'HEAD (Current Branch)', 'HEAD', '◉');
-    entry(container, '全部分支', '', '⑂');
+    entry(container, t("全部分支"), '', '⑂');
     const searching = Boolean($('branch-search').value.trim());
     function folder(parent, node, group = false) {
       if (node.ref) { entry(parent, node.name, node.ref.full, node.ref.current ? '★' : node.ref.tag ? '◇' : '⑂', node.ref.current); return; }
@@ -172,11 +175,11 @@
     }
     const groups = GitLogModel.branchTree(refs, $('branch-search').value);
     groups.forEach(group => folder(container, group, true));
-    if (!groups.length && searching) container.append(make('div', 'no-refs', '没有匹配的分支或标签'));
+    if (!groups.length && searching) container.append(make('div', 'no-refs', t("没有匹配的分支或标签")));
     container.scrollTop = scroll;
   }
   function clearDetail() {
-    $('changed-files').replaceChildren(make('div', 'empty-list', '选择提交以查看变更文件'));
+    $('changed-files').replaceChildren(make('div', 'empty-list', t("选择提交以查看变更文件")));
     $('commit-detail').replaceChildren(make('div', 'empty-list', 'Commit details'));
   }
   function renderDetail(data) {
@@ -184,30 +187,30 @@
     if (!data.compare && data.target) { state.selected = data.target; state.anchor = data.target; state.compared = [data.target]; persist(); renderCommits(); }
     const panel = $('commit-detail'); panel.replaceChildren();
     const files = $('changed-files'); files.replaceChildren();
-    const heading = make('div', 'section-title', data.aggregate ? '多提交改动' : data.compare ? '版本比较' : '提交详情'); panel.append(heading);
+    const heading = make('div', 'section-title', data.aggregate ? t("多提交改动") : data.compare ? t("版本比较") : t("提交详情")); panel.append(heading);
     const body = make('div', 'detail-body');
     body.append(make('h2', 'commit-title', data.commit?.subject || data.message));
     if (data.commit) {
       body.append(make('p', 'meta', `${data.commit.author} · ${data.commit.date.slice(0, 16).replace('T', ' ')}`));
       body.append(button(data.target, () => send('copy', { hash: data.target }), 'full-hash'));
-      const toolbar = make('div', 'detail-toolbar'); toolbar.append(button('操作此提交 ▾', () => send('menu', { hash: data.target }))); body.append(toolbar);
+      const toolbar = make('div', 'detail-toolbar'); toolbar.append(button(t("操作此提交 ▾"), () => send('menu', { hash: data.target }))); body.append(toolbar);
       if (data.commit.parents.length > 1) {
-        const label = make('label', 'parent-label', '比较父提交 '); const select = make('select');
+        const label = make('label', 'parent-label', t("比较父提交 ")); const select = make('select');
         data.commit.parents.forEach((parent, index) => { const option = make('option', '', `${index + 1} · ${shorten(parent)}`); option.value = parent; option.selected = parent === data.base; select.append(option); });
         select.onchange = () => send('select', { hash: data.target, parent: select.value }); label.append(select); body.append(label);
       }
       body.append(make('pre', 'commit-message', data.message));
     }
-    if (data.aggregate) body.append(make('p', 'meta', `基准 ${shorten(data.base)} → ${shorten(data.target)} · 包含最旧所选提交和区间内的中间修改；互相抵消的修改不计入净改动。`));
-    files.append(make('div', 'section-title', `${data.files.length} 个变更文件 · 点击打开 Diff`));
-    if (!data.files.length) files.append(make('p', 'meta', '此版本比较没有文件变化。'));
+    if (data.aggregate) body.append(make('p', 'meta', t("基准 {0} → {1} · 包含最旧所选提交和区间内的中间修改；互相抵消的修改不计入净改动。", shorten(data.base), shorten(data.target))));
+    files.append(make('div', 'section-title', t("{0} 个变更文件 · 点击打开 Diff", data.files.length)));
+    if (!data.files.length) files.append(make('p', 'meta', t("此版本比较没有文件变化。")));
     data.files.forEach(file => {
       const entry = make('div', 'changed-file');
       const diff = button('', () => send('diff', { path: file.path, commitHash: file.commitHash }), 'file-diff');
       diff.append(make('span', `file-status status-${file.status[0]}`, file.status[0]), make('span', 'file-path', file.commitHash ? `${shorten(file.commitHash)} · ${file.path}` : file.path));
       diff.title = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
       entry.append(diff);
-      if (!data.aggregate) { const restore = button('↶', () => send('restore', { path: file.path }), 'restore-file'); restore.title = '恢复工作区文件为此版本'; entry.append(restore); }
+      if (!data.aggregate) { const restore = button('↶', () => send('restore', { path: file.path }), 'restore-file'); restore.title = t("恢复工作区文件为此版本"); entry.append(restore); }
       files.append(entry);
     }); panel.append(body);
   }
@@ -216,11 +219,11 @@
     const conflict = status => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(status);
     const changes = state.snapshot.status;
     const groups = [
-      ['冲突', changes.filter(file => conflict(file.status)), 'conflict'],
-      ['已暂存', changes.filter(file => !conflict(file.status) && file.index !== ' ' && file.index !== '?'), 'index'],
-      ['未暂存 / 未跟踪', changes.filter(file => !conflict(file.status) && file.worktree !== ' '), 'worktree']
+      [t("冲突"), changes.filter(file => conflict(file.status)), 'conflict'],
+      [t("已暂存"), changes.filter(file => !conflict(file.status) && file.index !== ' ' && file.index !== '?'), 'index'],
+      [t("未暂存 / 未跟踪"), changes.filter(file => !conflict(file.status) && file.worktree !== ' '), 'worktree']
     ];
-    if (!changes.length) container.append(make('div', 'empty-list', '工作区干净，所有改动均已提交。'));
+    if (!changes.length) container.append(make('div', 'empty-list', t("工作区干净，所有改动均已提交。")));
     groups.forEach(([title, files, area]) => {
       if (!files.length) return;
       container.append(make('h2', 'working-group', `${title} · ${files.length}`));
@@ -229,9 +232,9 @@
         const diff = button('', () => send('working', { action: 'diff', path: file.path, area }), 'working-diff');
         diff.append(make('code', 'work-status', file.status), make('span', 'file-path', file.path)); row.append(diff);
         const action = id => send('working', { action: id, path: file.path, area });
-        row.append(button('打开', () => action('open')));
-        row.append(button(area === 'index' ? '取消暂存' : '暂存', () => action(area === 'index' ? 'unstage' : 'stage')));
-        if (area === 'worktree' && file.index !== '?') row.append(button('丢弃', () => action('discard'), 'danger-text'));
+        row.append(button(t("打开"), () => action('open')));
+        row.append(button(area === 'index' ? t("取消暂存") : t("暂存"), () => action(area === 'index' ? 'unstage' : 'stage')));
+        if (area === 'worktree' && file.index !== '?') row.append(button(t("丢弃"), () => action('discard'), 'danger-text'));
         container.append(row);
       });
     });
@@ -239,8 +242,8 @@
   function contextMenu(event, hash) {
     const menu = $('context-menu'); menu.replaceChildren();
     const items = [
-      ['复制提交 ID', null], ['从此提交创建分支', 'branchCreate'], ['创建标签', 'tagCreate'], ['检出此提交', 'checkout'],
-      ['Cherry-pick', 'cherryPick'], ['Revert', 'revert'], ['合并到当前分支', 'merge'], ['当前分支变基到这里', 'rebase'], ['Reset 到这里…', 'reset']
+      [t("复制提交 ID"), null], [t("从此提交创建分支"), 'branchCreate'], [t("创建标签"), 'tagCreate'], [t("检出此提交"), 'checkout'],
+      ['Cherry-pick', 'cherryPick'], ['Revert', 'revert'], [t("合并到当前分支"), 'merge'], [t("当前分支变基到这里"), 'rebase'], [t("Reset 到这里…"), 'reset']
     ];
     items.forEach(([label, action]) => {
       const item = button(label, () => { menu.hidden = true; if (action) send('action', { action, hash }); else send('copy', { hash }); });
@@ -250,7 +253,7 @@
   }
   function branchMenu(event, ref) {
     const menu = $('context-menu'); menu.replaceChildren();
-    GitLogModel.branchMenu(ref, state.snapshot.state.branch).forEach(spec => {
+    GitLogModel.branchMenu(ref, state.snapshot.state.branch, window.gitWorkbenchLanguage || 'zh-cn').forEach(spec => {
       if (spec.separator) { const line = make('hr'); line.setAttribute('role', 'separator'); menu.append(line); return; }
       const item = button(spec.label, () => { menu.hidden = true; send('branchAction', { action: spec.action, ref: ref.full }); });
       item.disabled = Boolean(spec.disabled || state.operating);
@@ -277,9 +280,9 @@
     }
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) send('refresh'); });
-  for (const [label, action] of [['暂存全部', 'stageAll'], ['取消全部暂存', 'unstageAll'], ['提交暂存区', 'commit'], ['Amend', 'amend']]) $('working-actions').append(button(label, () => send('action', { action }), action === 'commit' ? 'primary' : ''));
-  for (const [label, action] of [['Fetch', 'fetch'], ['Pull', 'pull'], ['Push', 'push'], ['Stash', 'stash'], ['恢复 Stash', 'stashPop'], ['原生提交面板', 'scm']]) $('sync-actions').append(button(label, () => send('action', { action })));
-  function busy() { $('busy').textContent = state.operating ? 'Git 操作中…' : state.loading ? '加载中…' : ''; $('app').classList.toggle('operating', state.operating); }
+  for (const [label, action] of [[t("暂存全部"), 'stageAll'], [t("取消全部暂存"), 'unstageAll'], [t("提交暂存区"), 'commit'], ['Amend', 'amend']]) $('working-actions').append(button(label, () => send('action', { action }), action === 'commit' ? 'primary' : ''));
+  for (const [label, action] of [['Fetch', 'fetch'], ['Pull', 'pull'], ['Push', 'push'], ['Stash', 'stash'], [t("恢复 Stash"), 'stashPop'], [t("原生提交面板"), 'scm']]) $('sync-actions').append(button(label, () => send('action', { action })));
+  function busy() { $('busy').textContent = state.operating ? t("Git 操作中…") : state.loading ? t("加载中…") : ''; $('app').classList.toggle('operating', state.operating); }
   window.addEventListener('message', event => {
     const { type, data } = event.data || {};
     if (type === 'reset') {
@@ -289,9 +292,9 @@
       $('context-menu').hidden = true;
       state.snapshot = data;
       $('repo').textContent = data.root.split(/[\\/]/).pop(); $('repo').title = data.root;
-      $('history-tab').textContent = 'Log: ' + (data.filters.ref ? data.filters.ref.replace(/^refs\/(heads|remotes|tags)\//, '') : '全部分支');
+      $('history-tab').textContent = 'Log: ' + (data.filters.ref ? data.filters.ref.replace(/^refs\/(heads|remotes|tags)\//, '') : t("全部分支"));
       $('filter-toggle').classList.toggle('filter-active', Boolean(data.filters.author || data.filters.path || data.filters.since || data.filters.until));
-      $('root-path').textContent = data.root; $('branch-state').textContent = `${data.state.branch}${data.state.operation ? ' · ' + data.state.operation + ' 进行中' : ''}`;
+      $('root-path').textContent = data.root; $('branch-state').textContent = `${data.state.branch}${data.state.operation ? ' · ' + data.state.operation + t(" 进行中") : ''}`;
       $('continue').hidden = $('abort').hidden = !data.state.operation;
       $('changes-count').textContent = String(data.status.length);
       for (const key of ['search', 'author', 'path', 'since', 'until']) $(key).value = data.filters[key] || '';

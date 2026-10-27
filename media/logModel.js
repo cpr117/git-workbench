@@ -1,4 +1,3 @@
-/* Shared branch hierarchy for the Git log. */
 (function (root) {
   'use strict';
   function branchTree(refs, query = '') {
@@ -24,24 +23,25 @@
       return { name: group.name, key: group.key, children: ordered(children) };
     }).filter(group => group.children.length);
   }
-  function branchMenu(ref, currentBranch) {
+  function branchMenu(ref, currentBranch, locale = 'zh-cn') {
+    const t = (typeof module !== 'undefined' && module.exports ? require('./i18n.js') : root.GitWorkbenchI18n).createTranslator(locale);
     const local = !ref.remote && !ref.tag, attached = currentBranch && !currentBranch.startsWith('(');
     return [
-      { label: ref.tag ? '检出标签（分离 HEAD）…' : '检出…', action: 'checkout', disabled: ref.current },
-      { label: `从「${ref.name}」新建分支…`, action: 'create' },
-      { label: `检出并变基到「${currentBranch}」…`, action: 'checkoutRebase', disabled: !local || ref.current || !attached },
+      { label: ref.tag ? t("检出标签（分离 HEAD）…") : t("检出…"), action: 'checkout', disabled: ref.current },
+      { label: t("从「{0}」新建分支…", ref.name), action: 'create' },
+      { label: t("检出并变基到「{0}」…", currentBranch), action: 'checkoutRebase', disabled: !local || ref.current || !attached },
       { separator: true },
-      { label: `与当前分支「${currentBranch}」比较`, action: 'compare' },
-      { label: '与工作区比较（整个仓库）', action: 'workingDiff' },
+      { label: t("与当前分支「{0}」比较", currentBranch), action: 'compare' },
+      { label: t("与工作区比较（整个仓库）"), action: 'workingDiff' },
       { separator: true },
-      { label: `将当前「${currentBranch}」变基到「${ref.name}」…`, action: 'rebase', disabled: ref.current || !attached },
-      { label: `将「${ref.name}」合并到当前「${currentBranch}」…`, action: 'merge', disabled: ref.current || !attached },
+      { label: t("将当前「{0}」变基到「{1}」…", currentBranch, ref.name), action: 'rebase', disabled: ref.current || !attached },
+      { label: t("将「{0}」合并到当前「{1}」…", ref.name, currentBranch), action: 'merge', disabled: ref.current || !attached },
       { separator: true },
-      { label: '从上游更新（仅快进）…', action: 'update', disabled: !local },
-      { label: `推送「${ref.name}」…`, action: 'push', disabled: !local },
+      { label: t("从上游更新（仅快进）…"), action: 'update', disabled: !local },
+      { label: t("推送「{0}」…", ref.name), action: 'push', disabled: !local },
       { separator: true },
-      { label: '重命名所选分支…', action: 'rename', disabled: !local },
-      { label: '删除所选分支…', action: 'delete', disabled: !local || ref.current },
+      { label: t("重命名所选分支…"), action: 'rename', disabled: !local },
+      { label: t("删除所选分支…"), action: 'delete', disabled: !local || ref.current },
     ];
   }
   const api = { branchTree, branchMenu };

@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { Change, Git, assertHash } from './git';
@@ -18,7 +19,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   private base = '';
   private target?: string;
   private baseLabel = '';
-  private targetLabel = '工作区';
+  private targetLabel = t("工作区");
   private files: Change[] = [];
   private nodes: ComparisonNode[] = [];
   private query = '';
@@ -61,12 +62,12 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
     item.id = JSON.stringify([this.git?.root, this.scope, this.base, this.target, node.file ? 'file' : 'folder', node.path]);
     if (node.file) {
       const file = node.file, status = file.status[0];
-      const statusLabel = ({ A: '新增', M: '修改', D: '删除', R: '重命名', C: '复制', T: '类型改变' } as Record<string, string>)[status] || status;
+      const statusLabel = ({ A: t("新增"), M: t("修改"), D: t("删除"), R: t("重命名"), C: t("复制"), T: t("类型改变") } as Record<string, string>)[status] || status;
       const directory = path.posix.dirname(file.path);
       item.description = this.mode === 'list' && directory !== '.' ? `${directory} · ${statusLabel}` : statusLabel;
       item.tooltip = '';
       item.iconPath = new vscode.ThemeIcon(status === 'A' ? 'diff-added' : status === 'D' ? 'diff-removed' : status === 'R' ? 'diff-renamed' : 'diff-modified', new vscode.ThemeColor(`gitDecoration.${status === 'A' ? 'added' : status === 'D' ? 'deleted' : status === 'R' ? 'renamed' : 'modified'}ResourceForeground`));
-      item.command = { command: 'gitWorkbench.compare.select', title: '查看文件差异', arguments: [file.path] };
+      item.command = { command: 'gitWorkbench.compare.select', title: t("查看文件差异"), arguments: [file.path] };
     } else {
       item.iconPath = new vscode.ThemeIcon('folder');
       item.tooltip = '';
@@ -75,17 +76,17 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   }
 
   private repository(): Git {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任此工作区。');
-    if (!this.git) throw new Error('请先右键文件夹或项目，选择 Git → 显示差异。');
+    if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
+    if (!this.git) throw new Error(t("请先右键文件夹或项目，选择 Git → 显示差异。"));
     return this.git;
   }
 
   async open(git: Git, scope: string, revision: string, options: { target?: string; baseLabel?: string; targetLabel?: string } = {}): Promise<void> {
-    if (!vscode.workspace.isTrusted) throw new Error('请先信任此工作区。');
+    if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
     const ticket = ++this.listGeneration;
     const base = assertHash(revision), target = options.target ? assertHash(options.target) : undefined;
     this.git = git; this.scope = scope; this.base = base; this.target = target; this.query = '';
-    this.baseLabel = options.baseLabel || base.slice(0, 8); this.targetLabel = options.targetLabel || target?.slice(0, 8) || '工作区';
+    this.baseLabel = options.baseLabel || base.slice(0, 8); this.targetLabel = options.targetLabel || target?.slice(0, 8) || t("工作区");
     this.files = []; this.nodes = []; this.changed.fire();
     await this.refresh();
     if (this.listGeneration !== ticket + 1 || this.git !== git) return;
@@ -131,10 +132,10 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
     const root = model.build(this.files, this.scope, this.query, { mode: this.mode, sort: this.sort });
     root.name = path.posix.basename(this.scope) || path.basename(this.repository().root);
     this.nodes = this.mode === 'tree' && root.children?.length ? [root] : root.children || [];
-    this.tree.description = `${path.posix.basename(this.scope) || path.basename(this.repository().root)} · ${this.files.length} 个文件 · ${this.baseLabel} ↔ ${this.targetLabel}${this.query ? ` · 筛选：${this.query}` : ''}`;
+    this.tree.description = t("{0} · {1} 个文件 · {2} ↔ {3}{4}", path.posix.basename(this.scope) || path.basename(this.repository().root), this.files.length, this.baseLabel, this.targetLabel, this.query ? t(" · 筛选：{0}", this.query) : '');
     // A persistent message takes height away from the native scrolling tree,
     // particularly when SCM's other sections leave only a few visible rows.
-    this.tree.message = this.nodes.length ? undefined : this.query ? '没有匹配的变更文件。' : '所选范围没有差异。';
+    this.tree.message = this.nodes.length ? undefined : this.query ? t("没有匹配的变更文件。") : t("所选范围没有差异。");
     this.changed.fire();
   }
 
@@ -159,7 +160,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
 
   async search(): Promise<void> {
     this.repository();
-    const query = await vscode.window.showInputBox({ prompt: '筛选变更路径（清空显示全部）', value: this.query, ignoreFocusOut: true });
+    const query = await vscode.window.showInputBox({ prompt: t("筛选变更路径（清空显示全部）"), value: this.query, ignoreFocusOut: true });
     if (query === undefined) return;
     this.query = query.trim(); this.updateTree();
   }
@@ -175,7 +176,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   async select(filePath: string): Promise<void> {
     this.repository();
     const file = this.files.find(file => file.path === filePath);
-    if (!file) throw new Error('请选择当前对比目录树中的文件。');
+    if (!file) throw new Error(t("请选择当前对比目录树中的文件。"));
     await this.openPreview(file);
   }
 

@@ -1,9 +1,10 @@
+import { t } from './i18n';
 export interface MappedRange { start: number; end: number; expanded: boolean; added: boolean; }
 
 // Zero-context Git hunks map unchanged lines exactly. A rewritten block maps to
 // its entire pre-edit block: line identity inside an arbitrary rewrite is unknown.
 export function mapLineRange(patch: string, start: number, end: number, currentLines: number): MappedRange {
-  if (start > currentLines) throw new Error('所选位置没有可追溯的代码，文件末尾空行暂无提交历史。');
+  if (start > currentLines) throw new Error(t("所选位置没有可追溯的代码，文件末尾空行暂无提交历史。"));
   end = Math.min(end, currentLines);
   let oldCursor = 1, newCursor = 1, first = Infinity, last = 0, expanded = false, added = false;
   const include = (from: number, to: number) => { first = Math.min(first, from); last = Math.max(last, to); };
@@ -24,6 +25,6 @@ export function mapLineRange(patch: string, start: number, end: number, currentL
     oldCursor = oldStart + oldCount; newCursor = newStart + newCount;
   }
   unchanged(currentLines);
-  if (!last) throw new Error('所选代码是未提交的新增内容，没有对应的已提交历史；可使用“查看文件历史”。');
+  if (!last) throw new Error(t("所选代码是未提交的新增内容，没有对应的已提交历史；可使用“查看文件历史”。"));
   return { start: first, end: last, expanded, added };
 }
