@@ -7,12 +7,17 @@ import { inScope, workingChanges } from './explorerGit';
 interface ComparisonNode { name: string; path: string; file?: Change; children?: ComparisonNode[]; }
 type ViewMode = 'tree' | 'list';
 type SortOrder = 'path' | 'name' | 'status';
+type IconStyle = 'file' | 'status';
 interface ComparisonPreview { original: vscode.Uri; modified: vscode.Uri; }
 const model = require('../../media/comparisonTree.js') as { build(files: Change[], scope: string, query: string, options: { mode: ViewMode; sort: SortOrder }): ComparisonNode };
 
-export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNode>, vscode.Disposable {
+export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNode>, vscode.FileDecorationProvider, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<ComparisonNode | undefined | void>();
   readonly onDidChangeTreeData = this.changed.event;
+  private readonly decorationsChanged = new vscode.EventEmitter<vscode.Uri[]>();
+  readonly onDidChangeFileDecorations = this.decorationsChanged.event;
+  private readonly decorations = new Map<string, { uri: vscode.Uri; decoration: vscode.FileDecoration }>();
+  private readonly decorationRegistration: vscode.Disposable;
   private readonly tree: vscode.TreeView<ComparisonNode>;
   private git?: Git;
   private scope = '';
@@ -26,6 +31,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   private listGeneration = 0;
   private mode: ViewMode = 'tree';
   private sort: SortOrder = 'path';
+  private iconStyle: IconStyle = 'file';
   private readonly configurationListener: vscode.Disposable;
   private readonly tabListener: vscode.Disposable;
   private preview?: ComparisonPreview;
@@ -35,16 +41,22 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   constructor(private readonly openNative: (git: Git, base: string, file?: Change, target?: string) => Promise<ComparisonPreview>) {
     void vscode.commands.executeCommand('setContext', 'gitWorkbench.comparisonActive', false);
     this.tree = vscode.window.createTreeView('gitWorkbench.compareFiles', { treeDataProvider: this, showCollapseAll: true });
+    this.decorationRegistration = vscode.window.registerFileDecorationProvider(this);
     this.readSettings();
     this.configurationListener = vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('gitWorkbench.comparisonViewMode') || event.affectsConfiguration('gitWorkbench.comparisonSortOrder')) this.readSettings();
+      if (['comparisonViewMode', 'comparisonSortOrder', 'comparisonIconStyle'].some(key => event.affectsConfiguration(`gitWorkbench.${key}`))) this.readSettings();
     });
     this.tabListener = vscode.window.tabGroups.onDidChangeTabs(async event => {
       if (!this.openingPreviews && event.closed.some(tab => this.isPreview(tab))) await this.close(false);
     });
   }
 
-  dispose(): void { this.listGeneration++; this.previewGeneration++; this.tabListener.dispose(); this.configurationListener.dispose(); this.tree.dispose(); this.changed.dispose(); }
+  dispose(): void { this.listGeneration++; this.previewGeneration++; this.tabListener.dispose(); this.configurationListener.dispose(); this.decorationRegistration.dispose(); this.decorationsChanged.dispose(); this.tree.dispose(); this.changed.dispose(); }
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined { return this.decorations.get(uri.toString())?.decoration; }
+  private resource(file: string): vscode.Uri {
+    // A separate scheme keeps comparison statuses out of Explorer and working-tree Git decorations.
+    return vscode.Uri.from({ scheme: 'git-workbench-comparison', path: vscode.Uri.file(path.join(this.repository().root, file)).path });
+  }
   getChildren(element?: ComparisonNode): ComparisonNode[] { return element ? element.children || [] : this.nodes; }
   getParent(element: ComparisonNode): ComparisonNode | undefined {
     const find = (nodes: ComparisonNode[]): ComparisonNode | undefined => {
@@ -64,15 +76,35 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
       const file = node.file, status = file.status[0];
       const statusLabel = ({ A: t("新增"), M: t("修改"), D: t("删除"), R: t("重命名"), C: t("复制"), T: t("类型改变") } as Record<string, string>)[status] || status;
       const directory = path.posix.dirname(file.path);
-      item.description = this.mode === 'list' && directory !== '.' ? `${directory} · ${statusLabel}` : statusLabel;
+      item.description = this.iconStyle === 'status' ? (this.mode === 'list' && directory !== '.' ? `${directory} · ${statusLabel}` : statusLabel)
+        : this.mode === 'list' && directory !== '.' ? directory : undefined;
       item.tooltip = '';
-      item.iconPath = new vscode.ThemeIcon(status === 'A' ? 'diff-added' : status === 'D' ? 'diff-removed' : status === 'R' ? 'diff-renamed' : 'diff-modified', new vscode.ThemeColor(`gitDecoration.${status === 'A' ? 'added' : status === 'D' ? 'deleted' : status === 'R' ? 'renamed' : 'modified'}ResourceForeground`));
+      item.iconPath = this.iconStyle === 'file' ? vscode.ThemeIcon.File
+        : new vscode.ThemeIcon(status === 'A' ? 'diff-added' : status === 'D' ? 'diff-removed' : status === 'R' ? 'diff-renamed' : 'diff-modified', this.statusColor(status));
       item.command = { command: 'gitWorkbench.compare.select', title: t("查看文件差异"), arguments: [file.path] };
     } else {
-      item.iconPath = new vscode.ThemeIcon('folder');
+      item.iconPath = this.iconStyle === 'file' ? vscode.ThemeIcon.Folder : new vscode.ThemeIcon('folder');
       item.tooltip = '';
     }
+    if (this.iconStyle === 'file') item.resourceUri = this.resource(node.path);
     return item;
+  }
+
+  private statusColor(status: string): vscode.ThemeColor {
+    return new vscode.ThemeColor(`gitDecoration.${status === 'A' ? 'added' : status === 'D' ? 'deleted' : status === 'R' ? 'renamed' : 'modified'}ResourceForeground`);
+  }
+
+  private updateDecorations(): void {
+    const affected = [...this.decorations.values()].map(value => value.uri);
+    this.decorations.clear();
+    if (this.git && this.iconStyle === 'file') {
+      for (const file of this.files) {
+        const uri = this.resource(file.path), status = file.status[0];
+        this.decorations.set(uri.toString(), { uri, decoration: { badge: status, color: this.statusColor(status), propagate: true } });
+        affected.push(uri);
+      }
+    }
+    if (affected.length) this.decorationsChanged.fire(affected);
   }
 
   private repository(): Git {
@@ -105,6 +137,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
     this.preview = undefined; this.previewGeneration++;
     this.listGeneration++;
     this.git = undefined; this.target = undefined; this.files = []; this.nodes = []; this.query = '';
+    this.updateDecorations();
     this.tree.message = undefined; this.tree.description = '';
     this.changed.fire();
     await vscode.commands.executeCommand('setContext', 'gitWorkbench.comparisonActive', false);
@@ -129,6 +162,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   }
 
   private updateTree(): void {
+    this.updateDecorations();
     const root = model.build(this.files, this.scope, this.query, { mode: this.mode, sort: this.sort });
     root.name = path.posix.basename(this.scope) || path.basename(this.repository().root);
     this.nodes = this.mode === 'tree' && root.children?.length ? [root] : root.children || [];
@@ -144,12 +178,14 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
     this.mode = config.get('comparisonViewMode') === 'list' ? 'list' : 'tree';
     const sort = config.get('comparisonSortOrder');
     this.sort = sort === 'name' || sort === 'status' ? sort : 'path';
+    this.iconStyle = config.get('comparisonIconStyle') === 'status' ? 'status' : 'file';
     void vscode.commands.executeCommand('setContext', 'gitWorkbench.comparisonViewMode', this.mode);
     void vscode.commands.executeCommand('setContext', 'gitWorkbench.comparisonSortOrder', this.sort);
+    void vscode.commands.executeCommand('setContext', 'gitWorkbench.comparisonIconStyle', this.iconStyle);
     if (this.git) this.updateTree();
   }
 
-  async configure(key: 'comparisonViewMode' | 'comparisonSortOrder', value: ViewMode | SortOrder): Promise<void> {
+  async configure(key: 'comparisonViewMode' | 'comparisonSortOrder' | 'comparisonIconStyle', value: ViewMode | SortOrder | IconStyle): Promise<void> {
     const config = vscode.workspace.getConfiguration('gitWorkbench');
     const current = config.inspect(key);
     const target = current?.workspaceFolderValue !== undefined ? vscode.ConfigurationTarget.WorkspaceFolder

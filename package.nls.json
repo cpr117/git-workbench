@@ -43,5 +43,10 @@
   "contributes.commands.35.title": "Sort by Path",
   "contributes.commands.36.title": "Sort by Status",
   "contributes.commands.37.title": "Close Comparison",
-  "contributes.viewsWelcome.0.contents": "Right-click a folder or project and choose **Git → Show Diff**, **Compare with Revision**, or **Compare with Branch**."
+  "contributes.viewsWelcome.0.contents": "Right-click a folder or project and choose **Git → Show Diff**, **Compare with Revision**, or **Compare with Branch**.",
+  "contributes.configuration.properties.gitWorkbench.comparisonIconStyle.enumDescriptions.0": "File type icons from the editor icon theme, with comparison status badges on the right (like Changes).",
+  "contributes.configuration.properties.gitWorkbench.comparisonIconStyle.enumDescriptions.1": "Colored change status icons on the left, with added/modified/deleted labels.",
+  "contributes.configuration.properties.gitWorkbench.comparisonIconStyle.description": "Icon style of the Compare file tree. Switch from the view’s More Actions menu.",
+  "comparison.icons.file": "File Icons (Like Changes)",
+  "comparison.icons.status": "Change Status Icons"
 }

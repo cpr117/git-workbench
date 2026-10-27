@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { Git } from '../src/git';
 import { setLocale } from '../src/i18n';
@@ -50,6 +50,8 @@ const comparisonSettings = new Map<string, unknown>();
 let configurationListener: ((event: { affectsConfiguration(key: string): boolean }) => void) | undefined;
 const executed: string[] = [];
 let comparisonTreeState: { message?: string; description: string };
+interface FileDecoration { badge?: string; color?: { id: string }; propagate?: boolean; }
+let decorationProvider: { provideFileDecoration(uri: Uri): FileDecoration | undefined; onDidChangeFileDecorations(listener: (uris: Uri[]) => void): unknown };
 const treeReveals: { node?: ComparisonNode; options: unknown }[] = [];
 const errors: string[] = [];
 const infos: string[] = [];
@@ -65,7 +67,7 @@ let pickerCalls = 0;
 const quickPicks: { labels: string[]; title?: string; placeHolder?: string }[] = [];
 const confirmationButtons: string[][] = [];
 interface ComparisonNode { name: string; path: string; file?: { path: string }; children?: ComparisonNode[]; }
-let comparisonProvider: { getChildren(node?: ComparisonNode): ComparisonNode[]; getParent(node: ComparisonNode): ComparisonNode | undefined; getTreeItem(node: ComparisonNode): { collapsibleState: number; description?: string; tooltip?: string; command?: { arguments?: unknown[] } } } | undefined;
+let comparisonProvider: { getChildren(node?: ComparisonNode): ComparisonNode[]; getParent(node: ComparisonNode): ComparisonNode | undefined; getTreeItem(node: ComparisonNode): { collapsibleState: number; description?: string; tooltip?: string; resourceUri?: Uri; iconPath?: { id: string }; command?: { arguments?: unknown[] } } } | undefined;
 const windowStub = {
   tabGroups: {
     all: [{ tabs }],
@@ -80,6 +82,7 @@ const windowStub = {
   activeColorTheme: { kind: 2 },
   createOutputChannel: () => ({ appendLine: noop, show: noop, dispose: noop }),
   createTextEditorDecorationType: disposable,
+  registerFileDecorationProvider: (provider: typeof decorationProvider) => { decorationProvider = provider; return disposable(); },
   createStatusBarItem: () => ({ text: '', command: '', tooltip: '', show: noop, dispose: noop }),
   createWebviewPanel: (viewType: string) => { const panel = new Panel(viewType); panels.push(panel); return panel; },
   createTreeView: (id: string, options: { treeDataProvider: typeof comparisonProvider; showCollapseAll: boolean }) => { assert.equal(id, 'gitWorkbench.compareFiles'); assert.equal(options.showCollapseAll, true); comparisonProvider = options.treeDataProvider; comparisonTreeState = { message: undefined, description: '' }; return { get message() { return comparisonTreeState.message; }, set message(value: string | undefined) { comparisonTreeState.message = value; }, get description() { return comparisonTreeState.description; }, set description(value: string) { comparisonTreeState.description = value; }, dispose: noop, reveal: async (node: ComparisonNode | undefined, options: unknown) => { treeReveals.push({ node, options }); } }; },
@@ -94,10 +97,10 @@ const windowStub = {
   showTextDocument: async () => undefined,
 };
 const vscodeStub = {
-  Uri, TabInputTextDiff, CancellationError, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { constructor(readonly id: string) {} },
+  Uri, TabInputTextDiff, CancellationError, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { static File = { id: 'file' }; static Folder = { id: 'folder' }; constructor(readonly id: string) {} },
   TreeItem: class { constructor(readonly label: string, readonly collapsibleState: number) {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-  EventEmitter: class { event = () => disposable(); fire = noop; dispose = noop; },
+  EventEmitter: class { listeners = new Set<(value: unknown) => void>(); event = (listener: (value: unknown) => void) => { this.listeners.add(listener); return { dispose: () => this.listeners.delete(listener) }; }; fire = (value: unknown) => { this.listeners.forEach(listener => listener(value)); }; dispose = () => this.listeners.clear(); },
   ColorThemeKind: { Light: 1, Dark: 2, HighContrast: 3, HighContrastLight: 4 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
   StatusBarAlignment: { Left: 1 }, ViewColumn: { One: 1, Active: -1, Beside: -2 }, ProgressLocation: { Window: 10 },
@@ -554,6 +557,75 @@ test('comparison view and sort preferences rebuild the same SCM tree, retain pat
   const menu = manifest.contributes.menus['view/title'] as { command: string; group: string; when: string }[];
   assert.equal(menu.filter(item => item.command.includes('compare.view') || item.command.includes('compare.sort')).length, 5);
   assert.ok(menu.filter(item => item.command.includes('compare.view') || item.command.includes('compare.sort')).every(item => item.when === 'view == gitWorkbench.compareFiles' && !item.group.startsWith('navigation')));
+}));
+
+test('comparison file icons use comparison statuses independently of working-tree files and clear decorations on close', async () => fixture(async (git, root) => {
+  await mkdir(path.join(root, 'folder'));
+  await writeFile(path.join(root, 'folder/deleted.md'), 'deleted\n');
+  await writeFile(path.join(root, 'folder/old.go'), 'package old\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'Icon baseline']);
+  await git.mutate(['branch', 'icon-baseline']);
+  await git.mutate(['mv', 'folder/old.go', 'folder/重命名.go']);
+  await rm(path.join(root, 'folder/deleted.md'));
+  await writeFile(path.join(root, 'folder/新增 file.ts'), 'export const amount = 1;\n');
+  await writeFile(path.join(root, 'code.txt'), 'committed change\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'Icon changes']);
+  // This file exists again locally, but the selected snapshots still describe a deletion.
+  await writeFile(path.join(root, 'folder/deleted.md'), 'local recreation\n');
+  const { send } = await branchView(); await send('compare', 'refs/heads/icon-baseline');
+  assert.deepEqual(errors, []);
+  const leaves = (nodes: ComparisonNode[]): ComparisonNode[] => nodes.flatMap(node => node.file ? [node] : leaves(node.children || []));
+  const items = leaves(comparisonProvider!.getChildren()).map(node => comparisonProvider!.getTreeItem(node));
+  const statuses = new Map(items.map(item => [path.basename(item.resourceUri!.path), decorationProvider.provideFileDecoration(item.resourceUri!)!.badge]));
+  assert.deepEqual(Object.fromEntries(statuses), { 'code.txt': 'M', 'deleted.md': 'D', '新增 file.ts': 'A', '重命名.go': 'R' });
+  assert.equal(comparisonProvider!.getTreeItem(comparisonProvider!.getChildren()[0]).iconPath!.id, 'folder');
+  for (const item of items) {
+    assert.equal(item.iconPath!.id, 'file'); assert.equal(item.description, undefined);
+    assert.equal(item.resourceUri!.scheme, 'git-workbench-comparison');
+    assert.equal(decorationProvider.provideFileDecoration(Uri.file(item.resourceUri!.path)), undefined, 'never decorate Explorer or live Git resources');
+    assert.equal(decorationProvider.provideFileDecoration(item.resourceUri!)!.propagate, true);
+    assert.ok(decorationProvider.provideFileDecoration(item.resourceUri!)!.color!.id.startsWith('gitDecoration.'));
+  }
+  const affected: Uri[] = []; decorationProvider.onDidChangeFileDecorations(uris => affected.push(...uris));
+  await commands.get('gitWorkbench.compare.close')!();
+  for (const item of items) {
+    assert.equal(decorationProvider.provideFileDecoration(item.resourceUri!), undefined);
+    assert.ok(affected.some(uri => uri.toString() === item.resourceUri!.toString()));
+  }
+}));
+
+test('comparison icon styles switch live, persist and retain list paths and native diff selection', async () => fixture(async (git, root) => {
+  await mkdir(path.join(root, 'folder')); await writeFile(path.join(root, 'folder/code.ts'), 'before\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'Icon baseline']);
+  await writeFile(path.join(root, 'folder/code.ts'), 'after\n');
+  const open = () => commands.get('gitWorkbench.explorer.diff')!(Uri.file(path.join(root, 'folder')));
+  await open();
+  let node = comparisonProvider!.getChildren()[0].children![0];
+  const uri = comparisonProvider!.getTreeItem(node).resourceUri!;
+  await commands.get('gitWorkbench.compare.icons.status')!();
+  assert.equal(comparisonSettings.get('comparisonIconStyle'), 'status');
+  let item = comparisonProvider!.getTreeItem(node);
+  assert.equal(item.iconPath!.id, 'diff-modified'); assert.equal(item.resourceUri, undefined);
+  assert.equal(item.description, '修改'); assert.equal(decorationProvider.provideFileDecoration(uri), undefined);
+  activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] }); await open();
+  node = comparisonProvider!.getChildren()[0].children![0];
+  assert.equal(comparisonProvider!.getTreeItem(node).iconPath!.id, 'diff-modified', 'saved choice survives reactivation');
+  await commands.get('gitWorkbench.compare.viewList')!();
+  await commands.get('gitWorkbench.compare.icons.file')!();
+  node = comparisonProvider!.getChildren()[0]; item = comparisonProvider!.getTreeItem(node);
+  assert.equal(item.iconPath!.id, 'file'); assert.equal(item.description, 'folder');
+  assert.equal(decorationProvider.provideFileDecoration(item.resourceUri!)!.badge, 'M');
+  await commands.get('gitWorkbench.compare.select')!(node.file!.path);
+  assert.equal(await revisionProvider.provideTextDocumentContent(tabs[0].input.original), 'before\n');
+  assert.equal(await realpath(tabs[0].input.modified.fsPath), await realpath(path.join(root, 'folder/code.ts')));
+  comparisonSettings.set('comparisonIconStyle', 'status');
+  configurationListener!({ affectsConfiguration: key => key === 'gitWorkbench.comparisonIconStyle' });
+  assert.equal(comparisonProvider!.getTreeItem(node).description, 'folder · 修改');
+  const manifest = JSON.parse(await readFile(path.resolve(__dirname, '../../package.json'), 'utf8'));
+  assert.equal(manifest.contributes.configuration.properties['gitWorkbench.comparisonIconStyle'].default, 'file');
+  const entries = manifest.contributes.menus['view/title'].filter((entry: { command: string }) => entry.command.includes('compare.icons.'));
+  assert.equal(entries.length, 2); assert.ok(entries.every((entry: { when: string; group: string }) => entry.when === 'view == gitWorkbench.compareFiles' && !entry.group.startsWith('navigation')));
+  assert.deepEqual(errors, []);
 }));
 
 test('comparison starts inactive, opens only on request and can close then reopen without changing SCM sections', async () => fixture(async (_git, root) => {

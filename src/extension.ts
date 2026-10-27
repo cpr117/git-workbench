@@ -336,6 +336,8 @@ export function activate(context: vscode.ExtensionContext): void {
   register('gitWorkbench.compare.close', async () => comparison.close());
   register('gitWorkbench.compare.viewTree', async () => comparison.configure('comparisonViewMode', 'tree'));
   register('gitWorkbench.compare.viewList', async () => comparison.configure('comparisonViewMode', 'list'));
+  register('gitWorkbench.compare.icons.file', async () => comparison.configure('comparisonIconStyle', 'file'));
+  register('gitWorkbench.compare.icons.status', async () => comparison.configure('comparisonIconStyle', 'status'));
   for (const order of ['path', 'name', 'status'] as const) {
     register(`gitWorkbench.compare.sort.${order}`, async () => comparison.configure('comparisonSortOrder', order));
   }

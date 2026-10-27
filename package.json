@@ -2,7 +2,7 @@
   "name": "git-workbench",
   "displayName": "Git Workbench",
   "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "publisher": "local-tools",
   "repository": {
     "type": "git",
@@ -46,7 +46,7 @@
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "build:native": "node scripts/build-native.mjs",
-    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.13.0.vsix"
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.13.1.vsix"
   },
   "contributes": {
     "viewsContainers": {
@@ -121,6 +121,19 @@
             "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.enumDescriptions.2%"
           ],
           "description": "%contributes.configuration.properties.gitWorkbench.comparisonSortOrder.description%"
+        },
+        "gitWorkbench.comparisonIconStyle": {
+          "type": "string",
+          "enum": [
+            "file",
+            "status"
+          ],
+          "default": "file",
+          "enumDescriptions": [
+            "%contributes.configuration.properties.gitWorkbench.comparisonIconStyle.enumDescriptions.0%",
+            "%contributes.configuration.properties.gitWorkbench.comparisonIconStyle.enumDescriptions.1%"
+          ],
+          "description": "%contributes.configuration.properties.gitWorkbench.comparisonIconStyle.description%"
         }
       }
     },
@@ -347,6 +360,18 @@
         "title": "%contributes.commands.37.title%",
         "category": "Git Workbench",
         "enablement": "gitWorkbench.comparisonActive"
+      },
+      {
+        "command": "gitWorkbench.compare.icons.file",
+        "title": "%comparison.icons.file%",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != file"
+      },
+      {
+        "command": "gitWorkbench.compare.icons.status",
+        "title": "%comparison.icons.status%",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != status"
       }
     ],
     "submenus": [
@@ -580,6 +605,14 @@
         {
           "command": "gitWorkbench.compare.close",
           "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.icons.file",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.compare.icons.status",
+          "when": "false"
         }
       ],
       "scm/title": [
@@ -709,6 +742,16 @@
           "command": "gitWorkbench.compare.sort.status",
           "when": "view == gitWorkbench.compareFiles",
           "group": "2_sort@3"
+        },
+        {
+          "command": "gitWorkbench.compare.icons.file",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "2_icons@1"
+        },
+        {
+          "command": "gitWorkbench.compare.icons.status",
+          "when": "view == gitWorkbench.compareFiles",
+          "group": "2_icons@2"
         },
         {
           "command": "gitWorkbench.compare.close",

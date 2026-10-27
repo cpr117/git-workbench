@@ -69,6 +69,7 @@
 | --- | --- | --- |
 | `gitWorkbench.historyPresentation` | `popup` | `popup` 原生小窗；`editor` 编辑器标签页 |
 | `gitWorkbench.comparisonViewMode` | `tree` | `tree` 树形；`list` 列表 |
+| `gitWorkbench.comparisonIconStyle` | `file` | `file` 文件图标（与更改一致）；`status` 变更状态图标。在“对比”的 **…** 菜单中切换并保存 |
 | `gitWorkbench.comparisonSortOrder` | `path` | `path` 路径；`name` 名称；`status` 状态 |
 
 ## 开发
