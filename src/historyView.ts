@@ -4,11 +4,21 @@ import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Commit, Git, assertHash } from './git';
 import { historySnapshot, offsetPatch, selectionDiff } from './historyDiff';
-import { HistorySurface, openHistoryPopup } from './historyPopup';
+import { HistorySurface, HistoryTheme, openHistoryPopup } from './historyPopup';
 
 let activePopup: HistorySurface | undefined;
 
 export interface HistoryItem extends Commit { patch?: string; file?: string; }
+
+function popupAppearance(): { theme: HistoryTheme; fontFamily: string; fontSize: number } {
+  const kind = vscode.window.activeColorTheme.kind;
+  const themes: Record<number, HistoryTheme> = {
+    [vscode.ColorThemeKind.Light]: 'light', [vscode.ColorThemeKind.Dark]: 'dark',
+    [vscode.ColorThemeKind.HighContrastLight]: 'hc-light', [vscode.ColorThemeKind.HighContrast]: 'hc-dark',
+  };
+  const editor = vscode.workspace.getConfiguration('editor');
+  return { theme: themes[kind] || 'dark', fontFamily: editor.get<string>('fontFamily', 'Menlo, Consolas, monospace'), fontSize: editor.get<number>('fontSize', 14) };
+}
 
 export async function openHistoryView(
   context: vscode.ExtensionContext, git: Git, entries: HistoryItem[], file: string,
@@ -22,7 +32,7 @@ export async function openHistoryView(
   let panel: HistorySurface;
   if (presentation === 'popup') {
     if (process.platform !== 'darwin' || vscode.env.remoteName) throw new Error(t("原生历史小窗当前支持 macOS 本地工作区。需要标签页时可显式设置 gitWorkbench.historyPresentation 为 editor。"));
-    panel = await openHistoryPopup(context.extensionUri.fsPath, title, vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Light || vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrastLight, message => { void vscode.window.showErrorMessage(`Git Workbench: ${message}`); });
+    panel = await openHistoryPopup(context.extensionUri.fsPath, title, popupAppearance().theme, message => { void vscode.window.showErrorMessage(`Git Workbench: ${message}`); });
     activePopup?.dispose();
     activePopup = panel;
     panel.onDidDispose(() => { if (activePopup === panel) activePopup = undefined; });
@@ -39,6 +49,13 @@ export async function openHistoryView(
   context.subscriptions.push(panel);
   let generation = 0, disposed = false, switching = false;
   const send = async (type: string, data: unknown) => { if (!disposed) await panel.webview.postMessage({ type, data }); };
+  const appearanceSubscriptions: vscode.Disposable[] = [];
+  if (panel.popup) {
+    const update = () => { void send('appearance', popupAppearance()); };
+    appearanceSubscriptions.push(vscode.window.onDidChangeActiveColorTheme(update), vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('editor.fontFamily') || event.affectsConfiguration('editor.fontSize')) update();
+    }));
+  }
   const show = async (hash: string) => {
     const ticket = ++generation;
     const entry = entries.find(item => item.hash === assertHash(hash));
@@ -74,7 +91,7 @@ export async function openHistoryView(
     if (ticket !== generation || disposed) return;
     await send('historyDetail', { hash: newest.hash, hashes: chosen.map(entry => entry.hash), comparison: true, base, target: newest.hash, subject: t("所选 {0} 个提交的区间累计差异（含最旧提交）", chosen.length), author: t("版本区间"), date: '', patch, rows: selectionDiff(patch) });
   };
-  panel.onDidDispose(() => { disposed = true; generation++; });
+  panel.onDidDispose(() => { disposed = true; generation++; appearanceSubscriptions.forEach(subscription => subscription.dispose()); });
   panel.webview.onDidReceiveMessage(async (message: unknown) => {
     if (!message || typeof message !== 'object' || disposed) return;
     const msg = message as Record<string, unknown>;
@@ -82,6 +99,7 @@ export async function openHistoryView(
       switch (msg.type) {
         case 'init':
           await send('history', { file, root: git.root, range, presentation, entries: entries.map(({ patch: _patch, file: _file, ...commit }) => commit) });
+          if (panel.popup) await send('appearance', popupAppearance());
           if (options.hashes?.length) { await showMany(options.hashes); options = { ...options, hashes: undefined }; break; }
           if (Array.isArray(msg.hashes) && msg.hashes.length > 1) { await showMany(msg.hashes); break; }
           await show(typeof msg.hash === 'string' && entries.some(entry => entry.hash === msg.hash) ? msg.hash : entries[0].hash); break;

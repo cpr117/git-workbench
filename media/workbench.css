@@ -11,13 +11,14 @@ input, select { background: var(--vscode-input-background, #252b35); color: var(
 .topbar { height: 34px; min-height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .git-label { font-size: 13px; font-weight: 600; }
 .repo { color: var(--muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 3px 6px; }
-.top-actions { margin-left: auto; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.top-actions { flex-shrink:0; margin-left: auto; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.top-actions #operations { max-width:min(240px, 35vw); overflow:hidden; text-overflow:ellipsis; }
+#open-changes { flex-shrink:0; white-space:nowrap; font-size:12px; padding:3px 6px; }
 .top-actions button { font-size: 12px; padding: 3px 6px; }
 #busy { color: var(--muted); font-size: 11px; }
 .tabs { display: flex; height: 100%; align-items: center; gap: 5px; min-width: 0; }
 .tabs [role=tab] { height: 26px; padding: 0 9px; border-radius: 4px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; font-size: 12px; }
 .tabs [aria-selected=true] { color: var(--text); background: var(--vscode-tab-activeBackground, #ffffff0b); border-color: var(--line); }
-#changes-count { background: var(--vscode-badge-background, #333d4e); color: var(--vscode-badge-foreground, #dce2ec); padding: 0 4px; border-radius: 8px; margin-left: 3px; font-size: 11px; }
 #branch-state { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .history-layout { display: grid; grid-template-columns: minmax(155px, var(--left-pane, 28%)) 3px minmax(310px, 1fr) 3px minmax(215px, var(--right-pane, 23%)); flex: 1; min-height: 0; overflow: auto; }
 .branches { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -81,31 +82,13 @@ input, select { background: var(--vscode-input-background, #252b35); color: var(
 .commit-message { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.6; color: var(--muted); }
 .changed-file { display: flex; align-items: center; gap: 2px; padding: 0 9px; }
 .file-diff { display: flex; align-items: center; padding: 4px 0; gap: 7px; font-size: 12px; flex: 1; min-width: 0; }
-.file-status { font: 11px var(--vscode-editor-font-family, monospace); color: #e6b86a; flex-shrink: 0; }
-.status-A { color: #61c6a7; } .status-D { color: #e58c9c; } .status-R { color: #9baee2; }
+.file-status { font: 11px var(--vscode-editor-font-family, monospace); color: var(--vscode-gitDecoration-modifiedResourceForeground, #e6b86a); flex-shrink: 0; }
+.file-status.status-A { color: var(--vscode-gitDecoration-addedResourceForeground, #61c6a7); } .file-status.status-D { color: var(--vscode-gitDecoration-deletedResourceForeground, #e58c9c); } .file-status.status-R { color: var(--vscode-gitDecoration-renamedResourceForeground, #9baee2); } .file-status.status-U { color: var(--vscode-gitDecoration-conflictingResourceForeground, #e58c9c); }
 .file-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .restore-file { color: var(--muted); padding: 2px 4px; }
 .parent-label { font-size: 11px; color: var(--muted); display: flex; gap: 5px; align-items: center; margin-bottom: 8px; }
 .parent-label select { flex: 1; padding: 3px; }
-.working-layout { display: grid; grid-template-columns: minmax(420px, 1fr) 270px; flex: 1; min-height: 0; overflow: auto; }
-.working-main { padding: 28px 30px; overflow: auto; }
-.working-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 20px; }
-.working-toolbar h1 { font-size: 20px; font-weight: 500; margin: 0 0 8px; }
-.working-toolbar p { color: var(--muted); font-size: 13px; margin: 0; }
-#working-actions { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
-#working-actions button { border-color: var(--line); font-size: 12px; }
-.primary { background: var(--vscode-button-background, #425d9e); color: var(--vscode-button-foreground, #fff); }
-.primary:hover { background: var(--vscode-button-hoverBackground, #526eaf); }
-.working-group { font-size: 12px; font-weight: 500; color: var(--muted); padding: 22px 0 9px; border-bottom: 1px solid var(--line); }
-.working-file { display: flex; align-items: center; gap: 5px; font-size: 12px; min-height: 38px; }
-.working-diff { display: flex; gap: 14px; flex: 1; min-width: 0; padding-left: 0; }
-.work-status { color: #e6b86a; white-space: pre; flex-shrink: 0; }
 .danger-text { color: var(--vscode-errorForeground, #e58c9c); }
-.working-help { border-left: 1px solid var(--line); background: var(--panel); padding: 16px 18px; color: var(--muted); font-size: 13px; line-height: 1.9; }
-.working-help .section-title { padding-left: 0; }
-.working-help ol { padding-left: 18px; }
-#sync-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 22px; }
-#sync-actions button { border-color: var(--line); }
 .footer { min-height: 22px; border-top: 1px solid var(--line); color: var(--muted); padding: 5px 17px; font-size: 10px; display: flex; justify-content: space-between; gap: 15px; }
 #root-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notice { display: flex; align-items: center; justify-content: space-between; padding: 9px 18px; background: var(--vscode-inputValidation-warningBackground, #4f3f20); color: var(--text); font-size: 13px; max-height: 130px; overflow: auto; white-space: pre-wrap; }
@@ -113,7 +96,32 @@ input, select { background: var(--vscode-input-background, #252b35); color: var(
 .context-menu button { display: block; width: 100%; padding: 7px 13px; font-size: 13px; }
 .context-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 8px; }
 .context-menu button:disabled { opacity: .45; cursor: default; }
-.operating #working-actions, .operating #sync-actions, .operating .working-file > button:not(.working-diff) { opacity: .5; pointer-events: none; }
 @container (max-width: 650px) { .commit-row { grid-template-columns: var(--graph-width, 36px) minmax(90px, 1fr) minmax(0, 100px) 78px 108px; } }
 @media (max-width: 950px) { .repo, #branch-state { display: none; } }
-@media (max-width: 760px) { .working-layout { grid-template-columns: 1fr; } .working-help { display: none; } .topbar { gap: 5px; } #busy { display: none; } }
+@media (max-width: 760px) { .topbar { gap: 5px; } #busy { display: none; } }
+
+/* Stash keeps list and files independently scrollable in the terminal panel. */
+.stash-layout { flex:1; min-height:0; display:grid; grid-template-columns:minmax(180px, 32%) minmax(240px, 1fr); overflow:auto; }
+.stash-list-pane, .stash-files-pane { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.stash-list-pane { border-right:1px solid var(--line); background:var(--panel); }
+.stash-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:6px 10px; border-bottom:1px solid var(--line); flex-shrink:0; }
+.stash-toolbar strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 150px; }
+#stash-actions { display:flex; flex-wrap:wrap; gap:2px; }
+#stash-list, #stash-files { min-height:0; overflow:auto; flex:1; }
+#stash-info { padding:6px 10px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
+#stash-search { flex:1; min-width:100px; }
+#stash-count { color:var(--muted); }
+.stash-entry { display:flex; flex-direction:column; gap:5px; padding:10px; width:100%; border-radius:0; min-width:0; }
+.stash-subject, .stash-meta { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stash-meta { color:var(--muted); font-size:0.9em; }
+.stash-entry[aria-selected=true], .stash-file.selected { background:var(--vscode-list-activeSelectionBackground, #263b59); color:var(--vscode-list-activeSelectionForeground, #fff); }
+.stash-entry[aria-selected=true] .stash-meta { color:inherit; }
+#stash-files { padding:6px; }
+.stash-file { display:flex; align-items:center; gap:8px; width:100%; min-width:0; min-height:28px; border-radius:0; }
+.stash-file .file-path { flex:1; min-width:0; }
+.stash-file .file-status { flex-shrink:0; }
+.stash-folder { min-width:0; }
+.stash-folder > summary { cursor:pointer; min-height:28px; padding:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stash-children { padding-left:16px; }
+@media (max-width:700px) { .topbar { gap:4px; } .topbar #branch-state { display:none; } .topbar .repo { max-width:85px; } .tabs [role=tab] { max-width:130px; padding:0 5px; } }
+.stash-source { color:var(--muted); flex-shrink:0; font-size:0.9em; }

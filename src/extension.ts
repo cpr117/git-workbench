@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Change, Commit, Filters, Git, Ref, SelectedChange, graphRows, assertHash } from './git';
-import { getActions, confirm, isConflict, getOperationGroups, perform } from './operations';
+import { getActions, confirm, getOperationGroups, perform, performStash } from './operations';
+import { StashSnapshot, StashDetail, stashSnapshot, stashDetail } from './stash';
+import { watchStashes } from './stashMonitor';
 import { openHistoryView } from './historyView';
 import { inScope } from './explorerGit';
 import { DirectoryComparison } from './directoryCompare';
@@ -21,10 +23,10 @@ function revisionUri(revision: Revision, label?: string): vscode.Uri {
   return uri;
 }
 
-async function openDiff(git: Git, base: string, target: string, file: Change): Promise<void> {
+async function openDiff(git: Git, base: string, target: string, file: Change, preview = true): Promise<void> {
   const left = revisionUri({ git, ref: base, file: file.oldPath || file.path, empty: file.status[0] === 'A' });
   const right = revisionUri({ git, ref: target, file: file.path, empty: file.status[0] === 'D' });
-  await vscode.commands.executeCommand('vscode.diff', left, right, `${file.path} · ${base.slice(0, 8)} ↔ ${target.slice(0, 8)}`);
+  await vscode.commands.executeCommand('vscode.diff', left, right, `${file.path} · ${base.slice(0, 8)} ↔ ${target.slice(0, 8)}`, { preview });
 }
 
 class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
@@ -36,20 +38,73 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   private detail?: { base: string; target: string; files: (Change | SelectedChange)[] };
   private generation = 0;
   private detailGeneration = 0;
+  private stashGeneration = 0;
+  private stashes?: StashSnapshot;
+  private stashToken = '';
+  private stashFiles?: StashDetail;
+  private stashMonitor?: { dispose(): void };
+  private stashMonitorReady?: Promise<void>;
+  private stashMonitorVersion = 0;
+  private stashRefreshTimer?: ReturnType<typeof setTimeout>;
+  private stashRefreshPending = false;
+  private stashListGeneration = 0;
+  private refreshing = 0;
   private busy = false;
   private branchHead?: string;
   private branchName = '';
   private pendingHash?: string;
   private subscriptions: vscode.Disposable[] = [];
 
-  constructor(private context: vscode.ExtensionContext, private comparison: DirectoryComparison) {}
-  dispose(): void { this.subscriptions.forEach(item => item.dispose()); this.panel = undefined; }
+  constructor(private context: vscode.ExtensionContext, private comparison: DirectoryComparison) {
+    this.subscriptions.push(vscode.window.onDidChangeWindowState(state => { if (state.focused) this.queueStashRefresh(); }));
+  }
+  dispose(): void { this.stopStashMonitor(); this.subscriptions.forEach(item => item.dispose()); this.panel = undefined; this.generation++; }
+
+  private stopStashMonitor(): void {
+    this.stashMonitorVersion++; this.stashListGeneration++;
+    this.stashMonitor?.dispose(); this.stashMonitor = undefined; this.stashMonitorReady = undefined;
+    clearTimeout(this.stashRefreshTimer); this.stashRefreshTimer = undefined; this.stashRefreshPending = false;
+  }
+
+  private ensureStashMonitor(git: Git): Promise<void> {
+    if (!this.stashMonitorReady) {
+      const version = this.stashMonitorVersion;
+      this.stashMonitorReady = watchStashes(git, () => this.queueStashRefresh(), error => output.appendLine(`Stash monitor: ${String(error)}`))
+        .then(monitor => { if (version === this.stashMonitorVersion) this.stashMonitor = monitor; else monitor.dispose(); })
+        .catch(error => { output.appendLine(`Stash monitor: ${String(error)}`); });
+    }
+    return this.stashMonitorReady;
+  }
+
+  private queueStashRefresh(): void {
+    if (!this.git || !this.panel) return;
+    this.stashRefreshPending = true;
+    clearTimeout(this.stashRefreshTimer);
+    if (!this.panel.visible || this.busy || this.refreshing) return;
+    this.stashRefreshTimer = setTimeout(() => {
+      this.stashRefreshTimer = undefined;
+      void this.refreshStashes().catch(error => output.appendLine(`Stash refresh: ${String(error)}`));
+    }, 180);
+  }
+
+  private async refreshStashes(): Promise<void> {
+    if (!this.git || !this.panel?.visible || this.busy || this.refreshing) return;
+    this.stashRefreshPending = false;
+    const git = this.git, generation = ++this.stashListGeneration;
+    const snapshot = await stashSnapshot(git);
+    if (generation !== this.stashListGeneration || git !== this.git || !this.panel || this.busy || this.refreshing) return;
+    if (snapshot.fingerprint === this.stashes?.fingerprint) return;
+    this.stashes = snapshot; this.stashToken = randomUUID(); this.stashFiles = undefined; this.stashGeneration++;
+    this.send('stashes', { root: git.root, entries: snapshot.entries, token: this.stashToken });
+  }
 
   private setRepository(git: Git): void {
     if (this.git?.root !== git.root) {
       if (this.busy) throw new Error(t("请等待当前 Git 操作完成再切换仓库。"));
+      this.stopStashMonitor();
       this.filters = { limit: 200 }; this.detail = undefined; this.refs = []; this.visibleCommits = [];
       this.pendingHash = undefined;
+      this.stashes = undefined; this.stashFiles = undefined; this.stashToken = ''; this.stashGeneration++;
       this.generation++; this.detailGeneration++; this.send('reset', null);
     }
     this.git = git;
@@ -93,7 +148,8 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
     };
     this.subscriptions.push(
-      view.onDidDispose(() => { if (this.panel === view) { this.panel = undefined; this.generation++; this.detailGeneration++; } }),
+      view.onDidDispose(() => { if (this.panel === view) { this.stopStashMonitor(); this.panel = undefined; this.generation++; this.detailGeneration++; this.stashGeneration++; } }),
+      view.onDidChangeVisibility(() => { if (view.visible && this.panel === view) this.queueStashRefresh(); }),
       view.webview.onDidReceiveMessage(message => this.receive(message).catch(error => this.error(error))),
     );
     view.webview.html = this.html(view.webview);
@@ -113,7 +169,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(18).toString('hex');
     const media = (file: string) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', file));
-    return `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Git Workbench</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};</script><script nonce="${nonce}" src="${media('i18n.js')}"></script><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
+    return `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Git Workbench</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};</script><script nonce="${nonce}" src="${media('i18n.js')}"></script><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('comparisonTree.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
   }
 
   private send(type: string, data: unknown): void { void this.panel?.webview.postMessage({ type, data }); }
@@ -127,17 +183,26 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   async refresh(): Promise<void> {
     if (!this.git || !this.panel) return;
     const generation = ++this.generation, git = this.git;
+    this.refreshing++; this.stashListGeneration++;
+    clearTimeout(this.stashRefreshTimer); this.stashRefreshPending = false;
     this.send('loading', true);
     try {
+      await this.ensureStashMonitor(git);
+      if (generation !== this.generation) return;
       const refs = await git.refs();
       if (generation !== this.generation) return;
       if (this.filters.ref && this.filters.ref !== 'HEAD' && !refs.some(ref => ref.full === this.filters.ref)) this.filters = { ...this.filters, ref: undefined };
       const filters = { ...this.filters };
-      const [state, commits, status] = await Promise.all([git.state(), git.commits(filters), git.status()]);
+      const [state, commits, stashes] = await Promise.all([git.state(), git.commits(filters), stashSnapshot(git)]);
       if (generation !== this.generation) return;
       this.refs = refs; this.visibleCommits = commits; this.branchHead = state.head; this.branchName = state.branch;
-      this.send('snapshot', { root: git.root, state, refs, commits, graph: graphRows(commits), status, filters });
-    } finally { if (generation === this.generation) this.send('loading', false); }
+      this.stashes = stashes; this.stashToken = randomUUID(); this.stashFiles = undefined; this.stashGeneration++;
+      this.send('snapshot', { root: git.root, state, refs, commits, graph: graphRows(commits), filters, stashes: stashes.entries, stashToken: this.stashToken });
+    } finally {
+      this.refreshing--;
+      if (generation === this.generation) this.send('loading', false);
+      if (!this.refreshing && this.stashRefreshPending) this.queueStashRefresh();
+    }
   }
 
   async select(hash: string, parent?: string): Promise<void> {
@@ -170,7 +235,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (!this.git) this.setRepository(await this.repository());
     const source = this.git;
     for (;;) {
-      const group = await vscode.window.showQuickPick(getOperationGroups(), { title: t("Git Workbench · Git 操作"), placeHolder: hash ? t("提交 {0} · 选择功能分类", hash.slice(0, 8)) : t("选择功能分类；提交操作默认以 HEAD 为目标") });
+      const group = await vscode.window.showQuickPick(getOperationGroups(), { title: `Git Workbench · ${t("仓库 Git 操作")}`, placeHolder: hash ? t("提交 {0} · 选择功能分类", hash.slice(0, 8)) : t("选择功能分类；提交操作默认以 HEAD 为目标") });
       if (!group) return;
       const pick = await vscode.window.showQuickPick([{ label: t("$(arrow-left) 返回功能分类"), id: 'back' }, ...group.ids.map(id => ({ label: getActions()[id], id }))], { title: `Git Workbench · ${group.label}`, placeHolder: t("选择操作") });
       if (!pick) return;
@@ -180,55 +245,11 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     }
   }
 
-  private async working(action: string, relative: string, area?: string): Promise<void> {
-    const git = this.git; if (!git) return;
-    git.file(relative);
-    const file = (await git.status()).find(change => change.path === relative);
-    if (git !== this.git) throw new Error(t("仓库已切换，请刷新后重试。"));
-    if (!file) throw new Error(t("文件状态已改变，请刷新。"));
-    if (action === 'open') { await vscode.window.showTextDocument(vscode.Uri.file(git.file(relative))); return; }
-    if (action === 'diff') {
-      if (isConflict(file.status)) {
-        const unmerged = await git.run(['ls-files', '--unmerged', '-z', '--', relative]);
-        const stages = unmerged.split('\0').filter(Boolean).map(entry => entry.split('\t')[0].split(' ')[2]);
-        const left = revisionUri({ git, ref: ':2', file: relative, empty: !stages.includes('2') });
-        const right = revisionUri({ git, ref: ':3', file: relative, empty: !stages.includes('3') });
-        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · Ours ↔ Theirs（在工作区文件中解决后暂存）", relative));
-      } else if (area === 'index') {
-        const head = await git.head();
-        const left = revisionUri({ git, ref: head || '', file: file.oldPath || relative, empty: !head || file.index === 'A' });
-        const right = revisionUri({ git, ref: ':0', file: relative, empty: file.index === 'D' });
-        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · HEAD ↔ 暂存区", relative));
-      } else {
-        const left = revisionUri({ git, ref: ':0', file: relative, empty: file.index === '?' });
-        const right = file.worktree === 'D' ? revisionUri({ git, ref: '', file: relative, empty: true }) : vscode.Uri.file(git.file(relative));
-        await vscode.commands.executeCommand('vscode.diff', left, right, t("{0} · 暂存区 ↔ 工作区", relative));
-      }
-      return;
-    }
-    if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
-    this.busy = true; this.send('operating', true);
-    try {
-      switch (action) {
-        case 'stage': await git.mutate(['add', '--', ...(file.worktree === 'R' && file.oldPath ? [file.oldPath] : []), relative]); break;
-        case 'unstage':
-          if (await git.head()) await git.mutate(['reset', 'HEAD', '--', ...(file.oldPath ? [file.oldPath] : []), relative]);
-          else await git.mutate(['rm', '--cached', '-f', '--', relative]);
-          break;
-        case 'discard':
-          if (file.index === '?') throw new Error(t("未跟踪文件请在资源管理器中删除；此处不会永久删除新文件。"));
-          if (isConflict(file.status)) throw new Error(t("冲突文件请在编辑器解决，或使用“中止”操作。"));
-          if (await confirm(t("丢弃 {0} 的未暂存改动，恢复为暂存区版本？", relative))) await git.mutate(['restore', '--worktree', '--', relative]);
-          break;
-        default: throw new Error(t("无效的文件操作。"));
-      }
-    } finally { this.busy = false; this.send('operating', false); await this.refresh(); }
-  }
-
   private async receive(message: unknown): Promise<void> {
     if (!message || typeof message !== 'object') return;
     const msg = message as Record<string, unknown>;
     const type = msg.type;
+    if (type === 'scm') { await vscode.commands.executeCommand('workbench.view.scm'); return; }
     if (type === 'init' || type === 'refresh') {
       if (!this.git) this.setRepository(await this.repository());
       await this.refresh();
@@ -239,6 +260,31 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (!this.git) return;
     if (msg.repoRoot !== this.git.root) return;
     switch (type) {
+      case 'stashRefresh': this.queueStashRefresh(); break;
+      case 'stashSelect':
+      case 'stashAction':
+      case 'stashDiff': {
+        if (!this.stashes || msg.token !== this.stashToken) return;
+        const entry = this.stashes.entries.find(item => item.ref === msg.ref && item.hash === msg.hash);
+        if (!entry) throw new Error(t("无效的 Stash 记录，请刷新。"));
+        const git = this.git;
+        if (type === 'stashSelect') {
+          const generation = ++this.stashGeneration;
+          this.stashFiles = undefined;
+          const detail = await stashDetail(git, entry);
+          if (generation !== this.stashGeneration || git !== this.git) return;
+          this.stashFiles = detail;
+          this.send('stashDetail', { ...detail, token: this.stashToken });
+        } else if (type === 'stashDiff') {
+          if (this.stashFiles?.stash.ref !== entry.ref || this.stashFiles.stash.hash !== entry.hash) return;
+          const file = this.stashFiles.files.find(item => item.id === msg.fileId);
+          if (file) await openDiff(git, file.base, file.target, file, msg.newTab !== true);
+        } else if (typeof msg.action === 'string') {
+          const snapshot = this.stashes, action = msg.action;
+          await this.runTask(git, 'Stash', () => performStash(git, action, snapshot, entry));
+        }
+        break;
+      }
       case 'branchAction': {
         if (typeof msg.ref !== 'string' || typeof msg.action !== 'string') return;
         const expected = this.refs.find(ref => ref.full === msg.ref);
@@ -298,7 +344,6 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
       case 'action': if (typeof msg.action === 'string') await this.operation(msg.action, typeof msg.hash === 'string' ? msg.hash : undefined); break;
       case 'menu': await this.menu(undefined, typeof msg.hash === 'string' ? msg.hash : undefined); break;
       case 'copy': if (typeof msg.hash === 'string') await vscode.env.clipboard.writeText(assertHash(msg.hash)); break;
-      case 'working': if (typeof msg.action === 'string' && typeof msg.path === 'string') await this.working(msg.action, msg.path, typeof msg.area === 'string' ? msg.area : undefined); break;
       case 'restore': {
         if (this.busy) throw new Error(t("请等待当前 Git 操作完成。"));
         const file = this.detail?.files.find(item => item.path === msg.path);
@@ -355,9 +400,9 @@ export function activate(context: vscode.ExtensionContext): void {
   register('gitWorkbench.menu', async () => {
     for (;;) {
       const group = await vscode.window.showQuickPick([
-        { label: t("$(git-merge) 提交图与工作区"), command: 'gitWorkbench.open' },
+        { label: t("$(git-merge) 提交图与 Stash"), command: 'gitWorkbench.open' },
         { label: t("$(history) 历史与追溯"), command: 'history' },
-        { label: t("$(tools) Git 操作"), command: 'gitWorkbench.operations' },
+        { label: `$(tools) ${t("仓库 Git 操作")}`, command: 'gitWorkbench.operations' },
       ], { title: 'Git Workbench', placeHolder: t("选择功能分类") });
       if (!group) return;
       if (group.command !== 'history') { await vscode.commands.executeCommand(group.command); return; }

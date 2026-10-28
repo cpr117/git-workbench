@@ -33,6 +33,11 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
     private var chinese = true
     private func text(_ zh: String, _ en: String) -> String { chinese ? zh : en }
 
+    private func appearance(_ theme: String) -> NSAppearance? {
+        let names: [String: NSAppearance.Name] = ["hc-light": .accessibilityHighContrastAqua, "hc-dark": .accessibilityHighContrastDarkAqua, "light": .aqua, "dark": .darkAqua]
+        return NSAppearance(named: names[theme] ?? .darkAqua)
+    }
+
     func emit(_ message: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
         FileHandle.standardOutput.write(data + Data([10]))
@@ -51,7 +56,8 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.userContentController.add(self, name: "gitWorkbench")
-        let theme = CommandLine.arguments[3] == "light" ? "light" : "dark"
+        let requestedTheme = CommandLine.arguments[3]
+        let theme = ["light", "dark", "hc-light", "hc-dark"].contains(requestedTheme) ? requestedTheme : "dark"
         let locale = chinese ? "zh-cn" : "en"
         let script = "window.gitWorkbenchLanguage='\(locale)'; document.addEventListener('DOMContentLoaded', () => document.documentElement.dataset.theme = '\(theme)');"
         config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -69,7 +75,7 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
         // would also hide the panel when clicking the editor itself.
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.fullScreenAuxiliary]
-        panel.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+        panel.appearance = appearance(theme)
         panel.contentView = webView
         panel.delegate = self
         panel.center()
@@ -139,6 +145,9 @@ final class HistoryApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScr
 
     func receive(_ message: [String: Any]) {
         if message["type"] as? String == "closeHost" { panel.close(); return }
+        if message["type"] as? String == "appearance", let data = message["data"] as? [String: Any], let theme = data["theme"] as? String {
+            panel.appearance = appearance(theme)
+        }
         webView.callAsyncJavaScript("window.dispatchEvent(new MessageEvent('message', {data: message}));", arguments: ["message": message], in: nil, in: .page) { [weak self] result in
             if case .failure = result { self?.emit(["type": "fatal", "message": self?.text("历史窗口无法接收数据。请关闭后重试。", "The history window cannot receive data. Close it and try again.") ?? "History window closed."]); NSApp.terminate(nil) }
         }

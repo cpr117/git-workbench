@@ -94,10 +94,12 @@ export function popupEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
-export async function openHistoryPopup(extensionPath: string, title: string, light: boolean, report: (message: string) => void): Promise<HistorySurface> {
+export type HistoryTheme = 'light' | 'dark' | 'hc-light' | 'hc-dark';
+
+export async function openHistoryPopup(extensionPath: string, title: string, theme: HistoryTheme, report: (message: string) => void): Promise<HistorySurface> {
   const binary = path.join(extensionPath, 'native-bin/Git Workbench History.app/Contents/MacOS/GitWorkbenchHistory');
   try { await chmod(binary, 0o755); } catch { throw new Error(t("原生历史小窗组件不可用，请重新安装包含 macOS 小窗组件的 VSIX。")); }
-  const child = spawn(binary, [path.join(extensionPath, 'media'), title, light ? 'light' : 'dark', getLocale()], { stdio: ['pipe', 'pipe', 'pipe'], env: popupEnvironment(process.env) });
+  const child = spawn(binary, [path.join(extensionPath, 'media'), title, theme, getLocale()], { stdio: ['pipe', 'pipe', 'pipe'], env: popupEnvironment(process.env) });
   const surface = new PopupTransport(child, report);
   await surface.started;
   return surface;

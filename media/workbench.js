@@ -1,4 +1,4 @@
-/* global acquireVsCodeApi, GitSelection, GitLogModel, GitWorkbenchI18n */
+/* global acquireVsCodeApi, GitSelection, GitLogModel, GitComparisonTree, GitWorkbenchI18n */
 'use strict';
 (() => {
   const language = GitWorkbenchI18n.normalizeLocale(window.gitWorkbenchLanguage || 'zh-cn');
@@ -6,7 +6,7 @@
   const t = GitWorkbenchI18n.createTranslator(language);
   const vscode = acquireVsCodeApi();
   const saved = vscode.getState() || {};
-  const state = { snapshot: null, detail: null, selected: saved.selected, compared: saved.hashes || [], anchor: saved.selected, tab: saved.tab || 'history', loading: false, operating: false, collapsed: new Set(saved.collapsed || []), panes: saved.panes || {} };
+  const state = { snapshot: null, detail: null, selected: saved.selected, compared: saved.hashes || [], anchor: saved.selected, tab: ['history', 'stash'].includes(saved.tab) ? saved.tab : 'history', loading: false, operating: false, collapsed: new Set(saved.collapsed || []), panes: saved.panes || {}, stashSelected: saved.stashSelected, stashRoot: saved.stashRoot, stashDetail: null, stashFile: null, stashPendingDiff: null, stashCollapsed: new Set() };
   const palette = ['#7c9cff', '#61c6a7', '#d49bed', '#e6b86a', '#77c4dd', '#e58c9c', '#a9c77a'];
   const svgNS = 'http://www.w3.org/2000/svg';
   const $ = id => document.getElementById(id);
@@ -20,23 +20,23 @@
   const button = (text, onClick, className = '') => {
     const node = make('button', className, text); node.type = 'button'; node.addEventListener('click', onClick); return node;
   };
-  const persist = () => vscode.setState({ selected: state.selected, hashes: state.compared, tab: state.tab, collapsed: [...state.collapsed], panes: state.panes });
+  const persist = () => vscode.setState({ selected: state.selected, hashes: state.compared, tab: state.tab, collapsed: [...state.collapsed], panes: state.panes, stashSelected: state.stashSelected, stashRoot: state.stashRoot });
   const shorten = hash => (hash || '').slice(0, 8);
   $('app').innerHTML = `
     <header class="topbar">
       <strong class="git-label">Git</strong>
-      <nav class="tabs" aria-label="${t("工作区视图")}"><button id="history-tab" role="tab">Log: ${t("全部分支")}</button><button id="working-tab" role="tab">${t("工作区")} <span id="changes-count">0</span></button></nav>
-      <button id="repo" class="repo" title="${t("切换仓库")}">${t("选择仓库")}</button><span id="branch-state"></span>
-      <div class="top-actions"><span id="busy" role="status"></span><button id="continue" hidden>${t("继续操作")}</button><button id="abort" hidden>${t("中止")}</button><button id="refresh" title="${t("刷新")}">↻</button><button id="operations">Git ${t("操作 ▾")}</button></div>
+      <nav class="tabs" aria-label="${t("Git 视图")}"><button id="history-tab" role="tab">Log: ${t("全部分支")}</button><button id="stash-tab" role="tab">Stash <span id="stash-count">0</span></button></nav>
+      <button id="open-changes" title="${t("打开源代码管理中的更改")}">${t("更改")} ↗</button><button id="repo" class="repo" title="${t("切换仓库")}">${t("选择仓库")}</button><span id="branch-state"></span>
+      <div class="top-actions"><span id="busy" role="status"></span><button id="continue" hidden>${t("继续操作")}</button><button id="abort" hidden>${t("中止")}</button><button id="refresh" title="${t("刷新")}">↻</button><button id="operations" title="${t("仓库 Git 操作")}">${t("仓库 Git 操作 ▾")}</button></div>
     </header>
     <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss" aria-label="${t("关闭提示")}">×</button></div>
     <main id="history-view" class="history-layout">
-      <aside class="branches" aria-label="${t("分支与标签")}"><div class="branch-search"><input id="branch-search" type="search" placeholder="Branch or tag" aria-label="${t("搜索分支或标签")}"><button id="new-branch" title="${t("从选中提交或 HEAD 创建分支")}">＋</button></div><div id="refs"></div></aside>
+      <aside class="branches" aria-label="${t("分支与标签")}"><div class="branch-search"><input id="branch-search" type="search" placeholder="${t("分支或标签")}" aria-label="${t("搜索分支或标签")}"><button id="new-branch" title="${t("从选中提交或 HEAD 创建分支")}">＋</button></div><div id="refs"></div></aside>
       <div id="left-split" class="splitter" role="separator" tabindex="0" aria-label="${t("调整分支目录宽度")}" aria-orientation="vertical"></div>
       <section class="commit-pane" aria-label="${t("提交图")}">
         <form id="filters" class="filters">
           <input id="search" placeholder="${t("搜索提交信息")}" aria-label="${t("搜索提交信息")}">
-          <button type="button" id="filter-toggle" title="${t("按作者、日期、路径筛选")}">User · Date · Paths ▾</button><button type="submit" title="${t("应用筛选")}">${t("搜索")}</button>
+          <button type="button" id="filter-toggle" title="${t("按作者、日期、路径筛选")}">${t("作者 · 日期 · 路径 ▾")}</button><button type="submit" title="${t("应用筛选")}">${t("搜索")}</button>
           <div id="advanced" class="advanced" hidden><input id="author" placeholder="${t("作者（Git 正则）")}" aria-label="${t("作者")}"><input id="path" placeholder="${t("路径，如 src/main.go")}" aria-label="${t("文件或目录路径")}"><label>${t("起始")} <input id="since" type="date"></label><label>${t("截止")} <input id="until" type="date"></label></div>
         </form>
         <div class="list-heading"><span id="history-count">${t("等待加载")}</span><button id="compare" hidden>${t("仅比两个快照")}</button><button id="clear-filters">${t("清除筛选")}</button></div>
@@ -47,24 +47,49 @@
       <aside class="details" id="details" aria-label="${t("提交变更与详情")}">
         <section id="changed-files" class="files-pane" aria-label="${t("变更文件")}"><div class="empty-list">${t("选择提交以查看变更文件")}</div></section>
         <div id="detail-split" class="splitter horizontal" role="separator" tabindex="0" aria-label="${t("调整文件与详情高度")}" aria-orientation="horizontal"></div>
-        <section id="commit-detail" class="info-pane" aria-label="${t("提交详情")}"><div class="empty-list">Commit details</div></section>
+        <section id="commit-detail" class="info-pane" aria-label="${t("提交详情")}"><div class="empty-list">${t("提交详情")}</div></section>
       </aside>
     </main>
-    <main id="working-view" class="working-layout" hidden>
-      <section class="working-main"><div class="working-toolbar"><div><h1>${t("工作区改动")}</h1><p>${t("暂存、检查差异，然后提交。")}</p></div><div id="working-actions"></div></div><div id="working-files"></div></section>
-      <aside class="working-help"><div class="section-title">${t("工作流")}</div><ol><li>${t("点击文件打开原生 Diff。")}</li><li>${t("暂存需要提交的文件。")}</li><li>${t("点击“提交暂存区”。")}</li></ol><p>${t("部分代码块：在编辑器选中代码，右键选择“暂存选中代码块”。")}</p><p>${t("冲突：比较 Ours / Theirs，打开工作区文件解决后暂存，再继续操作。")}</p><div id="sync-actions"></div></aside>
+    <main id="stash-view" class="stash-layout" hidden>
+      <section class="stash-list-pane"><div class="stash-toolbar"><strong>Stash</strong><button id="stash-create">${t("新建 Stash…")}</button></div><div id="stash-list" role="listbox" aria-label="${t("Stash 列表")}"></div></section>
+      <section class="stash-files-pane"><div class="stash-toolbar"><strong id="stash-heading">${t("选择 Stash 查看文件")}</strong><div id="stash-actions"></div></div><div id="stash-info"></div><div class="stash-toolbar"><input id="stash-search" type="search" placeholder="${t("筛选文件路径")}" aria-label="${t("筛选文件路径")}"><button id="stash-expand">${t("全部展开")}</button><button id="stash-collapse">${t("全部折叠")}</button></div><div id="stash-files"></div></section>
     </main>
-    <footer class="footer"><span id="root-path">${t("本地 Git · 数据不上传")}</span><span>Shift ${t("多选 · 右键提交操作")}</span></footer>
+    <footer class="footer"><span id="root-path">${t("本地 Git · 数据不上传")}</span><span id="footer-hint">Shift ${t("多选 · 右键提交操作")}</span></footer>
     <div id="context-menu" class="context-menu" role="menu" hidden></div>`;
 
   function setTab(tab) {
     state.tab = tab; persist();
-    $('history-view').hidden = tab !== 'history'; $('working-view').hidden = tab !== 'working';
+    const hints = { history: 'Shift ' + t('多选 · 右键提交操作'), stash: t('选择 Stash 查看文件') };
+    $('footer-hint').textContent = hints[tab];
+    $('context-menu').hidden = true;
+    $('history-view').hidden = tab !== 'history';
     $('history-tab').setAttribute('aria-selected', String(tab === 'history'));
-    $('working-tab').setAttribute('aria-selected', String(tab === 'working'));
+    $('stash-view').hidden = tab !== 'stash';
+    $('stash-tab').setAttribute('aria-selected', String(tab === 'stash'));
+    if (tab === 'stash' && state.snapshot) {
+      send('stashRefresh');
+      if (state.stashSelected && !state.stashDetail) stashMessage('stashSelect', state.stashSelected);
+    }
+    for (const name of ['history', 'stash']) $(name + '-tab').tabIndex = name === tab ? 0 : -1;
   }
   $('history-tab').onclick = () => setTab('history');
-  $('working-tab').onclick = () => setTab('working');
+  $('open-changes').onclick = () => send('scm');
+  $('stash-tab').onclick = () => setTab('stash');
+  document.querySelector('.tabs').setAttribute('role', 'tablist');
+  document.querySelector('.tabs').onkeydown = event => {
+    const names = ['history', 'stash'];
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    let index = names.indexOf(state.tab);
+    if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = names.length - 1;
+    else index = (index + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length;
+    setTab(names[index]); $(names[index] + '-tab').focus();
+  };
+  $('stash-create').onclick = () => send('action', { action: 'stash' });
+  $('stash-search').oninput = renderStashFiles;
+  $('stash-expand').onclick = () => { state.stashCollapsed.clear(); renderStashFiles(); };
+  $('stash-collapse').onclick = () => { document.querySelectorAll('#stash-files details').forEach(node => state.stashCollapsed.add(node.dataset.path)); renderStashFiles(); };
   $('repo').onclick = () => send('repo');
   $('refresh').onclick = () => send('refresh');
   $('operations').onclick = () => send('menu', { hash: state.selected });
@@ -160,7 +185,7 @@
       }
       if ((filter.ref || '') === ref) item.classList.add('active'); parent.append(item);
     };
-    entry(container, 'HEAD (Current Branch)', 'HEAD', '◉');
+    entry(container, t("HEAD（当前分支）"), 'HEAD', '◉');
     entry(container, t("全部分支"), '', '⑂');
     const searching = Boolean($('branch-search').value.trim());
     function folder(parent, node, group = false) {
@@ -180,7 +205,7 @@
   }
   function clearDetail() {
     $('changed-files').replaceChildren(make('div', 'empty-list', t("选择提交以查看变更文件")));
-    $('commit-detail').replaceChildren(make('div', 'empty-list', 'Commit details'));
+    $('commit-detail').replaceChildren(make('div', 'empty-list', t("提交详情")));
   }
   function renderDetail(data) {
     state.detail = data;
@@ -214,31 +239,101 @@
       files.append(entry);
     }); panel.append(body);
   }
-  function renderWorking() {
-    const container = $('working-files'); container.replaceChildren();
-    const conflict = status => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(status);
-    const changes = state.snapshot.status;
-    const groups = [
-      [t("冲突"), changes.filter(file => conflict(file.status)), 'conflict'],
-      [t("已暂存"), changes.filter(file => !conflict(file.status) && file.index !== ' ' && file.index !== '?'), 'index'],
-      [t("未暂存 / 未跟踪"), changes.filter(file => !conflict(file.status) && file.worktree !== ' '), 'worktree']
-    ];
-    if (!changes.length) container.append(make('div', 'empty-list', t("工作区干净，所有改动均已提交。")));
-    groups.forEach(([title, files, area]) => {
-      if (!files.length) return;
-      container.append(make('h2', 'working-group', `${title} · ${files.length}`));
-      files.forEach(file => {
-        const row = make('div', 'working-file');
-        const diff = button('', () => send('working', { action: 'diff', path: file.path, area }), 'working-diff');
-        diff.append(make('code', 'work-status', file.status), make('span', 'file-path', file.path)); row.append(diff);
-        const action = id => send('working', { action: id, path: file.path, area });
-        row.append(button(t("打开"), () => action('open')));
-        row.append(button(area === 'index' ? t("取消暂存") : t("暂存"), () => action(area === 'index' ? 'unstage' : 'stage')));
-        if (area === 'worktree' && file.index !== '?') row.append(button(t("丢弃"), () => action('discard'), 'danger-text'));
-        container.append(row);
-      });
+  const sameStash = (a, b) => a && b && a.ref === b.ref && a.hash === b.hash;
+  function stashMessage(type, entry, extra = {}) {
+    if (!state.snapshot) return;
+    send(type, { ref: entry.ref, hash: entry.hash, token: state.snapshot.stashToken, ...extra });
+  }
+  function selectStash(entry) {
+    state.stashSelected = { ref: entry.ref, hash: entry.hash }; state.stashRoot = state.snapshot.root;
+    state.stashDetail = null; state.stashFile = null; state.stashPendingDiff = null; persist();
+    renderStashes(); renderStashFiles(); $('stash-list').querySelector('[aria-selected=true]')?.focus(); stashMessage('stashSelect', entry);
+  }
+  function showStashDiff(entry, newTab) {
+    if (!sameStash(state.stashDetail?.stash, entry)) selectStash(entry);
+    if (sameStash(state.stashDetail?.stash, entry)) {
+      const file = state.stashDetail.files.find(item => item.id === state.stashFile) || state.stashDetail.files[0];
+      if (file) stashMessage('stashDiff', entry, { fileId: file.id, newTab });
+    } else state.stashPendingDiff = { newTab };
+  }
+  function stashMenu(event, entry, file) {
+    const menu = $('context-menu'); menu.replaceChildren();
+    const actions = file ? [] : [[t('恢复并删除 Stash'), 'pop'], [t('应用 Stash'), 'apply'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']];
+    for (const [label, action] of actions) {
+      const item = button(label, () => { menu.hidden = true; stashMessage('stashAction', entry, { action }); });
+      item.disabled = state.operating; item.setAttribute('role', 'menuitem');
+      if (action === 'drop') item.classList.add('danger-text');
+      menu.append(item);
+    }
+    if (actions.length) menu.append(make('hr'));
+    for (const [label, newTab] of [[t('显示差异'), false], [t('在新标签页显示差异'), true]]) {
+      const item = button(label, () => { menu.hidden = true; if (file) stashMessage('stashDiff', entry, { fileId: file.id, newTab }); else showStashDiff(entry, newTab); });
+      item.setAttribute('role', 'menuitem'); menu.append(item);
+    }
+    positionMenu(event);
+  }
+  function renderStashes() {
+    const list = $('stash-list'); list.replaceChildren();
+    const entries = state.snapshot?.stashes || [];
+    $('stash-count').textContent = String(entries.length);
+    if (!entries.length) list.append(make('p', 'empty-list', t('没有 Stash。')));
+    entries.forEach((entry, index) => {
+      const row = button('', () => selectStash(entry), 'stash-entry');
+      row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(sameStash(entry, state.stashSelected)));
+      row.append(make('strong', 'stash-subject', entry.subject), make('span', 'stash-meta', `${entry.ref} · ${entry.hash.slice(0, 8)} · ${entry.date.slice(0, 10)}`));
+      row.title = `${entry.subject}\n${entry.ref} · ${entry.hash}\n${entry.date}`;
+      row.oncontextmenu = event => { event.preventDefault(); if (!sameStash(entry, state.stashSelected)) selectStash(entry); stashMenu(event, entry); };
+      row.onkeydown = event => {
+        if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+          event.preventDefault();
+          let next = index + (event.key === 'ArrowUp' ? -1 : 1);
+          if (event.key === 'Home') next = 0;
+          if (event.key === 'End') next = entries.length - 1;
+          next = Math.max(0, Math.min(entries.length - 1, next));
+          selectStash(entries[next]); $('stash-list').children[next]?.focus();
+        } else if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') {
+          event.preventDefault(); const box = row.getBoundingClientRect(); stashMenu({ clientX: box.left, clientY: box.bottom }, entry);
+        }
+      };
+      list.append(row);
     });
   }
+  function renderStashFiles() {
+    const container = $('stash-files'), actions = $('stash-actions'), detail = state.stashDetail;
+    container.replaceChildren(); actions.replaceChildren();
+    $('stash-heading').textContent = detail ? `${detail.stash.ref} · ${t('{0} 个文件', detail.files.length)}` : t('选择 Stash 查看文件');
+    $('stash-info').textContent = detail ? detail.stash.subject : '';
+    $('stash-info').title = detail?.stash.subject || '';
+    if (!detail) { container.append(make('p', 'empty-list', state.stashSelected ? t('加载中…') : t('选择 Stash 查看文件'))); return; }
+    for (const [label, action] of [[t('应用 Stash'), 'apply'], [t('恢复并删除 Stash'), 'pop'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']]) {
+      const item = button(label, () => stashMessage('stashAction', detail.stash, { action }));
+      item.disabled = state.operating; actions.append(item);
+    }
+    const query = $('stash-search').value.trim();
+    const tree = GitComparisonTree.build(detail.files, '', query);
+    function append(parent, node) {
+      if (node.file) {
+        const file = node.file;
+        const row = button('', () => { state.stashFile = file.id; container.querySelector('.selected')?.classList.remove('selected'); row.classList.add('selected'); stashMessage('stashDiff', detail.stash, { fileId: file.id }); }, 'stash-file');
+        row.classList.toggle('selected', state.stashFile === file.id);
+        row.append(make('span', 'file-path', node.name));
+        if (file.source !== 'worktree') row.append(make('span', 'stash-source', file.source === 'index' ? t('暂存区') : t('未跟踪')));
+        row.append(make('code', `file-status status-${file.status[0]}`, file.status));
+        row.title = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
+        row.oncontextmenu = event => { event.preventDefault(); stashMenu(event, detail.stash, file); };
+        row.onkeydown = event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); const box = row.getBoundingClientRect(); stashMenu({ clientX: box.left, clientY: box.bottom }, detail.stash, file); } };
+        parent.append(row); return;
+      }
+      const folder = make('details', 'stash-folder'); folder.dataset.path = node.path; folder.open = Boolean(query) || !state.stashCollapsed.has(node.path);
+      const summary = make('summary', '', node.name); summary.title = node.path;
+      summary.onkeydown = event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); folder.open = event.key === 'ArrowRight'; } };
+      folder.ontoggle = () => { if (query) return; if (folder.open) state.stashCollapsed.delete(node.path); else state.stashCollapsed.add(node.path); };
+      const children = make('div', 'stash-children'); node.children.forEach(child => append(children, child)); folder.append(summary, children); parent.append(folder);
+    }
+    tree.children.forEach(node => append(container, node));
+    if (!tree.children.length) container.append(make('p', 'empty-list', t('无变更')));
+  }
+
   function contextMenu(event, hash) {
     const menu = $('context-menu'); menu.replaceChildren();
     const items = [
@@ -280,14 +375,22 @@
     }
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) send('refresh'); });
-  for (const [label, action] of [[t("暂存全部"), 'stageAll'], [t("取消全部暂存"), 'unstageAll'], [t("提交暂存区"), 'commit'], ['Amend', 'amend']]) $('working-actions').append(button(label, () => send('action', { action }), action === 'commit' ? 'primary' : ''));
-  for (const [label, action] of [['Fetch', 'fetch'], ['Pull', 'pull'], ['Push', 'push'], ['Stash', 'stash'], [t("恢复 Stash"), 'stashPop'], [t("原生提交面板"), 'scm']]) $('sync-actions').append(button(label, () => send('action', { action })));
+  function updateStashes(entries, token) {
+    const previous = state.stashRoot === state.snapshot.root ? state.stashSelected : null;
+    state.snapshot.stashes = entries; state.snapshot.stashToken = token;
+    state.stashDetail = null; state.stashPendingDiff = null;
+    state.stashSelected = entries.find(entry => sameStash(entry, previous)) || entries.find(entry => entry.hash === previous?.hash) || entries[0];
+    state.stashRoot = state.snapshot.root;
+    renderStashes(); renderStashFiles(); persist();
+    if (state.stashSelected && state.tab === 'stash') stashMessage('stashSelect', state.stashSelected);
+  }
   function busy() { $('busy').textContent = state.operating ? t("Git 操作中…") : state.loading ? t("加载中…") : ''; $('app').classList.toggle('operating', state.operating); }
   window.addEventListener('message', event => {
     const { type, data } = event.data || {};
     if (type === 'reset') {
-      state.snapshot = null; state.detail = null; state.selected = undefined; state.compared = []; persist();
-      $('commits').replaceChildren(); $('refs').replaceChildren(); clearDetail(); $('working-files').replaceChildren();
+      $('context-menu').hidden = true;
+      state.snapshot = null; state.detail = null; state.selected = undefined; state.compared = []; state.stashSelected = undefined; state.stashDetail = null; state.stashPendingDiff = null; state.stashCollapsed.clear(); renderStashes(); renderStashFiles(); persist();
+      $('commits').replaceChildren(); $('refs').replaceChildren(); clearDetail();
     } else if (type === 'snapshot') {
       $('context-menu').hidden = true;
       state.snapshot = data;
@@ -296,19 +399,26 @@
       $('filter-toggle').classList.toggle('filter-active', Boolean(data.filters.author || data.filters.path || data.filters.since || data.filters.until));
       $('root-path').textContent = data.root; $('branch-state').textContent = `${data.state.branch}${data.state.operation ? ' · ' + data.state.operation + t(" 进行中") : ''}`;
       $('continue').hidden = $('abort').hidden = !data.state.operation;
-      $('changes-count').textContent = String(data.status.length);
       for (const key of ['search', 'author', 'path', 'since', 'until']) $(key).value = data.filters[key] || '';
       state.compared = state.compared.filter(hash => data.commits.some(commit => commit.hash === hash));
       if (state.selected && !data.commits.some(commit => commit.hash === state.selected)) state.selected = undefined;
       if (!state.compared.length && state.selected) state.compared = [state.selected];
       if (state.compared.length && !state.compared.includes(state.selected)) state.selected = state.compared[0];
-      renderRefs(); renderCommits(); renderWorking();
+      renderRefs(); renderCommits(); updateStashes(data.stashes || [], data.stashToken);
       if (state.compared.length > 1) send('selectMany', { hashes: state.compared });
       else if (state.selected) send('select', { hash: state.selected });
       else { state.detail = null; clearDetail(); }
+    } else if (type === 'stashes') {
+      if (data.root !== state.snapshot?.root) return;
+      $('context-menu').hidden = true;
+      updateStashes(data.entries, data.token);
+    } else if (type === 'stashDetail') {
+      if (data.token !== state.snapshot?.stashToken || !sameStash(data.stash, state.stashSelected)) return;
+      state.stashDetail = data; renderStashFiles();
+      if (state.stashPendingDiff) { const pending = state.stashPendingDiff; state.stashPendingDiff = null; showStashDiff(data.stash, pending.newTab); }
     } else if (type === 'detail') renderDetail(data);
     else if (type === 'loading') { state.loading = data; busy(); }
-    else if (type === 'operating') { state.operating = data; busy(); }
+    else if (type === 'operating') { state.operating = data; busy(); renderStashFiles(); $('stash-create').disabled = Boolean(data); }
     else if (type === 'error') { $('notice-text').textContent = data; $('notice').hidden = false; state.loading = false; busy(); }
   });
   function applyPanes() {

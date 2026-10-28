@@ -2,6 +2,35 @@
 (function (root) {
   'use strict';
   const messages = {
+  "打开源代码管理中的更改": "Open Changes in Source Control",
+  "更改": "Changes",
+  "Git 视图": "Git views",
+  "恢复到新分支并保留 Stash…": "Restore on a new branch and keep stash\u2026",
+  "恢复到新分支并删除 Stash…": "Restore on a new branch and drop stash\u2026",
+  "\n从 Stash 原始基线创建并切换到分支 {0}，同时恢复暂存状态。": "\nCreate and switch to {0} at the original stash base, restoring the index as well.",
+  "恢复到新分支前，请先提交或 Stash 当前工作区的改动。": "Commit or stash your current working-tree changes before restoring on a new branch.",
+
+  "Stash 已恢复，但无法确认列表状态，未删除记录。请刷新检查。": "The stash was applied, but its list could not be verified. No entry was dropped. Refresh and check the working tree.",
+  "暂存区": "Index",
+  "未跟踪": "Untracked",
+
+  "全部展开": "Expand all",
+  "全部折叠": "Collapse all",
+  "显示差异": "Show Diff",
+  "{0} 个文件": "{0} files",
+
+  "无效的 Stash 记录，请刷新。": "Invalid stash entry. Refresh and try again.",
+  "Stash 列表已改变，请刷新并重新选择。": "The stash list changed. Refresh and select the entry again.",
+  "恢复并保留 Stash": "Apply and keep stash",
+  "恢复暂存状态并保留 Stash": "Apply with index and keep stash",
+  "恢复暂存状态并删除 Stash": "Apply with index and drop stash",
+  "选择恢复方式（恢复暂存状态对应 --index）": "Choose how to restore (reinstate index uses --index)",
+  "{0}？\n{1} · {2}\n{3}\n仓库：{4}\n分支：{5}": "{0}?\n{1} · {2}\n{3}\nRepository: {4}\nBranch: {5}",
+  "新建 Stash…": "New stash…",
+  "Stash 列表": "Stash list",
+  "选择 Stash 查看文件": "Select a stash to view files",
+  "筛选文件路径": "Filter file paths",
+  "在新标签页显示差异": "Show Diff in a New Tab",
   "{0} {1}？": "{0} {1}?",
   "\n保持当前检出分支不变。": "\nKeep the currently checked-out branch unchanged.",
   "\n此操作会使用 force-with-lease 重写远端历史。": "\nThis uses force-with-lease to rewrite remote history.",
@@ -12,7 +41,7 @@
   " 纯新增行暂无历史，未纳入追溯。": " Newly added lines have no committed history and are excluded.",
   " 进行中": " in progress",
   "$(arrow-left) 返回功能分类": "$(arrow-left) Back to categories",
-  "$(git-merge) 提交图与工作区": "$(git-merge) Commit graph and working tree",
+  "$(git-merge) 提交图与 Stash": "$(git-merge) Commit graph and Stash",
   "$(history) 历史与追溯": "$(history) History and blame",
   "$(tools) Git 操作": "$(tools) Git operations",
   "Amend 将重写 HEAD，并包含当前暂存区内容。继续？": "Amend rewrites HEAD and includes the current index. Continue?",
@@ -346,7 +375,7 @@
   "请先信任此工作区。": "Trust this workspace first.",
   "请先切换到本地分支。": "Switch to a local branch first.",
   "请先创建首次提交。": "Create the first commit first.",
-  "请先右键文件夹或项目，选择 Git → 显示差异。": "Right-click a folder or project and choose Git → Show Diff first.",
+  "请先右键文件夹或项目，选择 Git Workbench → 显示差异。": "Right-click a folder or project and choose Git Workbench → Show Diff first.",
   "请先在编辑器中打开仓库内的文件。": "Open a repository file in the editor first.",
   "请先完成或中止正在进行的 Git 操作。": "Complete or abort the current Git operation first.",
   "请先完成或中止正在进行的 Git 操作并解决冲突。": "Complete or abort the current Git operation and resolve conflicts first.",
@@ -412,7 +441,13 @@
   "重命名": "Renamed",
   "重命名当前分支": "Rename current branch",
   "重命名所选分支…": "Rename selected branch…",
-  "重命名本地分支 {0}": "Rename local branch {0}"
+  "重命名本地分支 {0}": "Rename local branch {0}",
+  "分支或标签": "Branch or tag",
+  "作者 · 日期 · 路径 ▾": "User · Date · Paths ▾",
+  "HEAD（当前分支）": "HEAD (Current Branch)",
+  "文件历史": "File history",
+  "仓库 Git 操作": "Repository Git operations",
+  "仓库 Git 操作 ▾": "Repository Git operations ▾"
 };
   const normalizeLocale = language => /^zh(?:[-_]|$)/i.test(language || '') ? 'zh-cn' : 'en';
   function createTranslator(language) {

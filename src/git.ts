@@ -176,7 +176,7 @@ export class Git {
     if (filters.ref) {
       if (filters.ref !== 'HEAD' && !(await this.refs()).some(ref => ref.full === filters.ref)) throw new Error(t("分支已不存在，请刷新。"));
       args.push(filters.ref);
-    } else args.push('--all', 'HEAD');
+    } else args.push('--branches', '--remotes', '--tags', 'HEAD');
     args.push('--');
     if (filters.path) { this.file(filters.path); args.push(filters.path); }
     return parseCommits(await this.run(args));

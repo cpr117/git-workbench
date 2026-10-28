@@ -1,6 +1,7 @@
 import { t } from './i18n';
 import * as vscode from 'vscode';
 import { Git, assertHash, isConflict } from './git';
+import { StashEntry, StashSnapshot, restoreStash, stashSnapshot } from './stash';
 export { isConflict } from './git';
 
 export function getActions(): Record<string, string> { return {
@@ -36,6 +37,42 @@ async function input(prompt: string, value?: string): Promise<string | undefined
   if (result === undefined) return undefined;
   if (!result.trim()) throw new Error(t("输入不能为空。"));
   return result.trim();
+}
+
+export async function performStash(git: Git, action: string, snapshot: StashSnapshot, entry: StashEntry): Promise<void> {
+  if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
+  if (!['apply', 'pop', 'drop', 'unstash'].includes(action)) throw new Error(t("不支持的操作。"));
+  const before = await git.state();
+  let mode: 'apply' | 'pop' | 'drop' = 'apply';
+  if (action === 'pop' || action === 'drop') mode = action;
+  let reinstateIndex = false;
+  let newBranch: string | undefined;
+  if (action === 'unstash') {
+    const options = [
+      { label: t("恢复并保留 Stash"), mode: 'apply', index: false },
+      { label: t("恢复并删除 Stash"), mode: 'pop', index: false },
+      { label: t("恢复暂存状态并保留 Stash"), mode: 'apply', index: true },
+      { label: t("恢复暂存状态并删除 Stash"), mode: 'pop', index: true },
+      { label: t("恢复到新分支并保留 Stash…"), mode: 'apply', index: true, branch: true },
+      { label: t("恢复到新分支并删除 Stash…"), mode: 'pop', index: true, branch: true },
+    ] as const;
+    const pick = await vscode.window.showQuickPick(options, { title: `Unstash · ${entry.ref}`, placeHolder: t("选择恢复方式（恢复暂存状态对应 --index）") });
+    if (!pick) return;
+    mode = pick.mode; reinstateIndex = pick.index;
+    if ('branch' in pick && pick.branch) {
+      newBranch = await input(t("新分支名称")); if (!newBranch) return;
+      await git.validateBranch(newBranch);
+    }
+  }
+  const label = { apply: t("恢复并保留 Stash"), pop: t("恢复并删除 Stash"), drop: t("删除 Stash") }[mode];
+  const branchDetail = newBranch ? t("\n从 Stash 原始基线创建并切换到分支 {0}，同时恢复暂存状态。", newBranch) : '';
+  if (!await confirm(t("{0}？\n{1} · {2}\n{3}\n仓库：{4}\n分支：{5}", label, entry.ref, entry.hash.slice(0, 8), entry.subject, git.root, before.branch) + branchDetail)) return;
+  if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
+  const current = await git.state();
+  if (current.head !== before.head || current.branch !== before.branch) throw new Error(t("当前 HEAD 已改变，请刷新后重试。"));
+  if (mode !== 'drop' && (current.operation || (await git.status()).some(file => isConflict(file.status)))) throw new Error(t("请先完成或中止正在进行的 Git 操作并解决冲突。"));
+  if (newBranch && (await git.status()).length) throw new Error(t("恢复到新分支前，请先提交或 Stash 当前工作区的改动。"));
+  await restoreStash(git, snapshot, entry, mode, reinstateIndex, newBranch);
 }
 
 export async function perform(git: Git, action: string, hash?: string): Promise<void> {
@@ -147,11 +184,15 @@ export async function perform(git: Git, action: string, hash?: string): Promise<
     case 'stashApply':
     case 'stashPop':
     case 'stashDrop': {
-      const raw = await git.run(['stash', 'list', '--format=%gd%x00%s']);
-      const items = raw.trimEnd().split('\n').filter(Boolean).map(line => { const [ref, message] = line.split('\0'); return { label: ref, description: message }; });
+      const snapshot = await stashSnapshot(git);
+      const items = snapshot.entries.map(entry => ({ label: entry.ref, description: entry.subject, entry }));
       if (!items.length) throw new Error(t("没有 Stash。"));
       const pick = await vscode.window.showQuickPick(items, { placeHolder: actions[action] });
-      if (pick) await write(['stash', action === 'stashApply' ? 'apply' : action === 'stashPop' ? 'pop' : 'drop', pick.label], t("{0} {1}？", actions[action], pick.label)); break;
+      if (pick) {
+        const modes: Record<string, string> = { stashApply: 'apply', stashPop: 'pop', stashDrop: 'drop' };
+        await performStash(git, modes[action], snapshot, pick.entry);
+      }
+      break;
     }
     case 'continue':
     case 'abort': {

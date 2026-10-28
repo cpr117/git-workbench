@@ -81,7 +81,9 @@
     if (!state.changedRows.length) return;
     state.change = state.change < 0 ? direction > 0 ? 0 : state.changedRows.length - 1 : (state.change + direction + state.changedRows.length) % state.changedRows.length;
     const row = state.changedRows[state.change];
-    $('left').scrollTop = $('right').scrollTop = Math.max(0, row * 22 - 44);
+    const element = $('left-rows').children[row];
+    const offset = element.getBoundingClientRect().top - $('left-rows').getBoundingClientRect().top;
+    $('left').scrollTop = $('right').scrollTop = Math.max(0, offset - element.getBoundingClientRect().height * 2);
     $('status').textContent = t("差异 {0} / {1}", state.change + 1, state.changedRows.length);
   }
   let syncing = false;
@@ -100,12 +102,16 @@
   $('mode').onclick = () => { state.patch = !state.patch; $('patch').hidden = !state.patch; $('comparison-body').hidden = state.patch; $('mode').textContent = state.patch ? t("左右对比") : t("原始补丁"); };
   window.addEventListener('message', event => {
     const { type, data } = event.data || {};
-    if (type === 'history') {
+    if (type === 'appearance' && state.presentation === 'popup') {
+      if (['light', 'dark', 'hc-light', 'hc-dark'].includes(data?.theme)) document.documentElement.dataset.theme = data.theme;
+      if (typeof data?.fontFamily === 'string') document.documentElement.style.setProperty('--vscode-editor-font-family', data.fontFamily);
+      if (Number.isFinite(data?.fontSize) && data.fontSize > 0) document.documentElement.style.setProperty('--vscode-editor-font-size', `${data.fontSize}px`);
+    } else if (type === 'history') {
       state.entries = data.entries; state.presentation = data.presentation;
       $('mapping').textContent = data.range?.notice || ''; $('mapping').hidden = !data.range?.notice;
       $('float').textContent = state.presentation === 'popup' ? t("在标签页中打开") : t("在弹窗中打开");
       $('float').title = t("保留所选提交并切换展示方式；不更改默认设置");
-      $('title').textContent = data.range ? t("选区历史 · History for Selection") : t("文件历史 · File History");
+      $('title').textContent = data.range ? t("选区历史") : t("文件历史");
       $('file').textContent = data.file; $('file').title = `${data.root}/${data.file}`;
       $('range').textContent = data.range ? t("所选代码：{0}–{1} 行", data.range.start, data.range.end) : t("跟随文件重命名 · 最多 300 条");
       if (!state.selectedHashes.length) state.selectedHashes = [data.entries[0]?.hash].filter(Boolean);

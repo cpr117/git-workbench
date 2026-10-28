@@ -25,19 +25,33 @@ let tabListener: ((event: { closed: TestTab[] }) => Promise<void>) | undefined;
 class Panel {
   active = true; popup = false; visible = true;
   disposals = new Set<() => void>();
+  visibilityListeners = new Set<() => void>();
   messages: Message[] = [];
+  messageListeners = new Set<(message: Message) => void>();
   listener?: (message: unknown) => Promise<unknown>;
   webview = {
     options: {}, html: '', cspSource: 'vscode-webview:',
     asWebviewUri: (uri: Uri) => uri.toString(),
     onDidReceiveMessage: (listener: (message: unknown) => Promise<unknown>) => { this.listener = listener; return disposable(); },
-    postMessage: async (message: Message) => { this.messages.push(message); return true; },
+    postMessage: async (message: Message) => { this.messages.push(message); this.messageListeners.forEach(listener => listener(message)); return true; },
   };
   constructor(readonly viewType: string) {}
   reveal() { this.active = true; }
   show() { this.visible = true; }
+  onDidChangeVisibility(listener: () => void) { this.visibilityListeners.add(listener); return { dispose: () => this.visibilityListeners.delete(listener) }; }
   onDidDispose(listener: () => void) { this.disposals.add(listener); return disposable(); }
   dispose() { this.active = false; for (const listener of this.disposals) listener(); this.disposals.clear(); }
+}
+
+function nextMessage(view: Panel, type: string): Promise<Message> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { view.messageListeners.delete(listener); reject(new Error(`No automatic ${type} update after external Git operation`)); }, 2500);
+    const listener = (message: Message) => {
+      if (message.type !== type) return;
+      clearTimeout(timer); view.messageListeners.delete(listener); resolve(message);
+    };
+    view.messageListeners.add(listener);
+  });
 }
 const commands = new Map<string, (...args: unknown[]) => Promise<unknown>>();
 const panels: Panel[] = [];
@@ -47,7 +61,11 @@ let viewProvider: { resolveWebviewView(view: Panel): void } | undefined;
 let revisionProvider: { provideTextDocumentContent(uri: Uri): Promise<string> };
 let presentation = 'editor';
 const comparisonSettings = new Map<string, unknown>();
-let configurationListener: ((event: { affectsConfiguration(key: string): boolean }) => void) | undefined;
+type ConfigurationEvent = { affectsConfiguration(key: string): boolean };
+let configurationListener: ((event: ConfigurationEvent) => void) | undefined;
+const configurationCallbacks = new Set<(event: ConfigurationEvent) => void>();
+let themeListener: (() => void) | undefined;
+const windowStateListeners = new Set<(state: { focused: boolean }) => void>();
 const executed: string[] = [];
 let comparisonTreeState: { message?: string; description: string };
 interface FileDecoration { badge?: string; color?: { id: string }; propagate?: boolean; }
@@ -69,6 +87,7 @@ const confirmationButtons: string[][] = [];
 interface ComparisonNode { name: string; path: string; file?: { path: string }; children?: ComparisonNode[]; }
 let comparisonProvider: { getChildren(node?: ComparisonNode): ComparisonNode[]; getParent(node: ComparisonNode): ComparisonNode | undefined; getTreeItem(node: ComparisonNode): { collapsibleState: number; description?: string; tooltip?: string; resourceUri?: Uri; iconPath?: { id: string }; command?: { arguments?: unknown[] } } } | undefined;
 const windowStub = {
+  onDidChangeWindowState: (listener: (state: { focused: boolean }) => void) => { windowStateListeners.add(listener); return { dispose: () => windowStateListeners.delete(listener) }; },
   tabGroups: {
     all: [{ tabs }],
     onDidChangeTabs: (listener: typeof tabListener) => { tabListener = listener; return disposable(); },
@@ -80,6 +99,7 @@ const windowStub = {
   },
   activeTextEditor: undefined as unknown,
   activeColorTheme: { kind: 2 },
+  onDidChangeActiveColorTheme: (listener: () => void) => { themeListener = listener; return { dispose: () => { if (themeListener === listener) themeListener = undefined; } }; },
   createOutputChannel: () => ({ appendLine: noop, show: noop, dispose: noop }),
   createTextEditorDecorationType: disposable,
   registerFileDecorationProvider: (provider: typeof decorationProvider) => { decorationProvider = provider; return disposable(); },
@@ -91,7 +111,7 @@ const windowStub = {
   showQuickPick: async (items: readonly (string | { label: string })[] = [], options?: { title?: string; placeHolder?: string }) => { quickPicks.push({ labels: items.map(item => typeof item === 'string' ? item : item.label), ...options }); pickerCalls++; return pickQueue.shift(); },
   showOpenDialog: async () => { folderPickerCalls++; return folderQueue.shift(); },
   showInputBox: async () => inputQueue.shift(),
-  showWarningMessage: async (text: string, ...items: unknown[]) => { warnings.push(text); confirmationButtons.push(items.filter(item => typeof item === 'string') as string[]); return warningQueue.shift(); },
+  showWarningMessage: async (text: string, ...items: unknown[]) => { warnings.push(text); confirmationButtons.push(items.filter(item => typeof item === 'string') as string[]); const answer = warningQueue.shift(); return typeof answer === 'function' ? answer() : answer; },
   showInformationMessage: async (text: string) => { infos.push(text); return undefined; },
   showErrorMessage: async (text: string) => { errors.push(text); return undefined; },
   showTextDocument: async () => undefined,
@@ -107,7 +127,7 @@ const vscodeStub = {
   window: windowStub,
   workspace: {
     getConfiguration: () => ({ get: (key: string, fallback?: unknown) => key === 'historyPresentation' ? presentation || fallback : comparisonSettings.get(key) ?? fallback, inspect: () => undefined, update: async (key: string, value: unknown) => { comparisonSettings.set(key, value); configurationListener?.({ affectsConfiguration: name => name === `gitWorkbench.${key}` }); } }),
-    onDidChangeConfiguration: (listener: typeof configurationListener) => { configurationListener = listener; return disposable(); },
+    onDidChangeConfiguration: (listener: (event: ConfigurationEvent) => void) => { configurationCallbacks.add(listener); configurationListener = event => configurationCallbacks.forEach(callback => callback(event)); return { dispose: () => configurationCallbacks.delete(listener) }; },
     isTrusted: true, workspaceFolders: [] as { uri: Uri }[], onDidChangeTextDocument: disposable, onDidCloseTextDocument: disposable,
     registerTextDocumentContentProvider: (_scheme: string, provider: typeof revisionProvider) => { revisionProvider = provider; return disposable(); },
   },
@@ -151,9 +171,10 @@ async function fixture(task: (git: Git, root: string) => Promise<void>, language
   commands.clear(); panels.length = 0; logViews.length = 0; viewProvider = undefined; executed.length = 0; errors.length = 0; infos.length = 0; pickQueue.length = 0; pickerCalls = 0;
   warnings.length = 0; warningQueue.length = 0; inputQueue.length = 0; commandArgs.length = 0;
   folderQueue.length = 0; folderPickerCalls = 0; vscodeStub.workspace.workspaceFolders = [];
-  comparisonProvider = undefined; treeReveals.length = 0; tabs.length = 0; tabListener = undefined; comparisonSettings.clear(); configurationListener = undefined;
+  comparisonProvider = undefined; treeReveals.length = 0; tabs.length = 0; tabListener = undefined; comparisonSettings.clear(); configurationCallbacks.clear(); configurationListener = undefined; themeListener = undefined; windowStub.activeColorTheme.kind = 2;
   const root = await mkdtemp(path.join(tmpdir(), 'git-workbench-host-'));
   const git = new Git(root);
+  const subscriptions: { dispose(): void }[] = [];
   try {
     await git.run(['init', '-b', 'main']);
     await git.run(['config', 'user.name', 'History Test']); await git.run(['config', 'user.email', 'test@example.invalid']);
@@ -165,9 +186,9 @@ async function fixture(task: (git: Git, root: string) => Promise<void>, language
       document: { uri: Uri.file(file), isDirty: false, getText: () => 'after\ncontext\n' },
       selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 }, isEmpty: false },
     };
-    activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] });
+    activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions });
     await task(git, root);
-  } finally { setLocale('zh-cn'); await rm(root, { recursive: true, force: true }); }
+  } finally { subscriptions.reverse().forEach(item => item.dispose()); setLocale('zh-cn'); await rm(root, { recursive: true, force: true }); }
 }
 
 test('explicit editor preference retains a persistent comparison view without native editor migration', async () => fixture(async () => {
@@ -278,6 +299,21 @@ test('unsupported remote popup does not silently create a history tab', async ()
   await commands.get('gitWorkbench.selectionHistory')!();
   assert.equal(panels.length, 0); assert.equal(popups.length, 0);
   assert.ok(errors.some(text => text.includes('macOS 本地工作区')));
+}));
+
+test('native history synchronizes high contrast and editor fonts live and disposes appearance subscriptions', async () => fixture(async () => {
+  presentation = 'popup'; windowStub.activeColorTheme.kind = vscodeStub.ColorThemeKind.HighContrastLight;
+  comparisonSettings.set('fontFamily', 'Test Mono, monospace'); comparisonSettings.set('fontSize', 19);
+  await commands.get('gitWorkbench.fileHistory')!(); const popup = popups[0]; await popup.listener!({ type: 'init' });
+  assert.deepEqual(popup.messages.find(message => message.type === 'appearance')!.data, { theme: 'hc-light', fontFamily: 'Test Mono, monospace', fontSize: 19 });
+  windowStub.activeColorTheme.kind = vscodeStub.ColorThemeKind.HighContrast; themeListener!();
+  assert.equal(popup.messages.at(-1)!.data!.theme, 'hc-dark');
+  comparisonSettings.set('fontSize', 24); configurationListener!({ affectsConfiguration: key => key === 'editor.fontSize' });
+  assert.equal(popup.messages.at(-1)!.data!.fontSize, 24);
+  const before = popup.messages.length; popup.dispose();
+  assert.equal(themeListener, undefined); configurationListener!({ affectsConfiguration: () => true });
+  assert.equal(popup.messages.length, before, 'closed native windows receive no more appearance updates');
+  assert.deepEqual(errors, []);
 }));
 
 test('selection history multi-select compares the inclusive endpoints within the tracked range', async () => fixture(async () => {
@@ -865,7 +901,7 @@ test('English application locale localizes menus and confirmations without chang
   assert.match(warnings[0], /Create branch 功能\/支付 from [a-f0-9]+/);
   assert.deepEqual(confirmationButtons[0], ['Run']);
   assert.equal((await git.refs()).some(ref => ref.name === '功能/支付'), true);
-  assert.equal(quickPicks.at(-2)?.title, 'Git Workbench · Git operations');
+  assert.equal(quickPicks.at(-2)?.title, 'Git Workbench · Repository Git operations');
 }, 'en-US'));
 
 test('English graph and history bootstrap preserve repository text and localized dirty-selection notices', async () => fixture(async (git, root) => {
@@ -888,3 +924,198 @@ test('unsupported UI languages fall back to English host errors', async () => fi
   await commands.get('gitWorkbench.fileHistory')!();
   assert.deepEqual(errors, ['Git Workbench: Open a repository file in the editor first.']);
 }, 'fr'));
+
+async function stashView() {
+  await commands.get('gitWorkbench.open')!();
+  const view = logViews[0]; await view.listener!({ type: 'init' });
+  const snapshot = view.messages.filter(message => message.type === 'snapshot').at(-1)!.data!;
+  const entries = snapshot.stashes as { ref: string; hash: string; subject: string }[];
+  const entry = entries[0];
+  const send = (type: string, extra: Record<string, unknown> = {}) => view.listener!({ type, repoRoot: snapshot.root, token: snapshot.stashToken, ...entry, ...extra });
+  return { view, snapshot, entry, send };
+}
+
+test('stash panel selects its file tree and opens immutable native preview and pinned diffs', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'stashed\ncontext\n');
+  await mkdir(path.join(root, 'nested')); await writeFile(path.join(root, 'nested/new.txt'), 'new stash file\n');
+  await git.mutate(['stash', 'push', '-u', '-m', 'Stash <script> 中文']);
+  const before = await git.status(), { view, send } = await stashView();
+  assert.match(view.webview.html, /comparisonTree.js/);
+  await send('stashSelect');
+  const detail = view.messages.filter(message => message.type === 'stashDetail').at(-1)!.data!;
+  assert.deepEqual((detail.files as { path: string }[]).map(file => file.path).sort(), ['code.txt', 'nested/new.txt']);
+  const files = detail.files as { id: string; path: string }[];
+  await send('stashDiff', { fileId: files.find(file => file.path === 'nested/new.txt')!.id });
+  let args = commandArgs.at(-1)!;
+  assert.equal(args[3] && (args[3] as { preview: boolean }).preview, true);
+  assert.equal(await revisionProvider.provideTextDocumentContent(args[0] as Uri), '');
+  assert.equal(await revisionProvider.provideTextDocumentContent(args[1] as Uri), 'new stash file\n');
+  await send('stashDiff', { fileId: files.find(file => file.path === 'code.txt')!.id, newTab: true }); args = commandArgs.at(-1)!;
+  assert.deepEqual(args[3], { preview: false });
+  assert.equal(await revisionProvider.provideTextDocumentContent(args[0] as Uri), 'after\ncontext\n');
+  assert.equal(await revisionProvider.provideTextDocumentContent(args[1] as Uri), 'stashed\ncontext\n');
+  const count = executed.length;
+  await send('stashDiff', { fileId: '../../outside' });
+  await send('stashAction', { action: 'drop', token: 'stale-token' });
+  await send('stashAction', { action: 'drop', repoRoot: 'other-repository' });
+  assert.equal(executed.length, count); assert.equal(warnings.length, 0);
+  assert.deepEqual(await git.status(), before); assert.deepEqual(errors, []);
+}));
+
+test('stash actions respect cancellation and reject list changes during confirmation', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'stashed\n'); await git.mutate(['stash', 'push', '-m', 'original']);
+  const { send } = await stashView();
+  await send('stashAction', { action: 'drop' });
+  assert.equal((await git.run(['stash', 'list'])).trim().split('\n').length, 1);
+  // Refresh issues a fresh token, so reacquire the current view snapshot.
+  const snapshot = logViews[0].messages.filter(message => message.type === 'snapshot').at(-1)!.data!;
+  warningQueue.push(async () => { await writeFile(path.join(root, 'code.txt'), 'external stash\n'); await git.mutate(['stash', 'push', '-m', 'external']); return '执行'; });
+  await logViews[0].listener!({ type: 'stashAction', repoRoot: snapshot.root, token: snapshot.stashToken, ...(snapshot.stashes as object[])[0], action: 'drop' });
+  assert.match(errors.at(-1)!, /列表已改变/);
+  assert.equal((await git.run(['stash', 'list'])).trim().split('\n').length, 2);
+  assert.deepEqual(await git.status(), []);
+}));
+
+test('Unstash restores the index through explicit options and retains the stash', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'staged stash\n'); await git.mutate(['add', '-A']);
+  await git.mutate(['stash', 'push', '-m', 'staged']);
+  const { send } = await stashView();
+  pickQueue.push({ label: '恢复暂存状态并保留 Stash', mode: 'apply', index: true }); warningQueue.push('执行');
+  await send('stashAction', { action: 'unstash' });
+  assert.equal((await git.status())[0].index, 'M');
+  assert.ok((await git.run(['stash', 'list'])).includes('staged'));
+  assert.deepEqual(errors, []);
+}));
+
+test('Unstash new-branch recovery confirms its original-base direction and refuses a dirty working tree', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'saved branch content\n'); await git.mutate(['add', '-A']);
+  await git.mutate(['stash', 'push', '-m', 'branch recovery']);
+  const { send, snapshot } = await stashView();
+  await writeFile(path.join(root, 'code.txt'), 'local work\n');
+  pickQueue.push({ label: '恢复到新分支', mode: 'apply', index: true, branch: true }); inputQueue.push('rescue'); warningQueue.push('执行');
+  await send('stashAction', { action: 'unstash' });
+  assert.match(errors.at(-1)!, /当前工作区的改动/);
+  assert.equal((await git.refs()).some(ref => ref.name === 'rescue'), false);
+  assert.equal(await readFile(path.join(root, 'code.txt'), 'utf8'), 'local work\n');
+  await git.mutate(['restore', '--worktree', '--', 'code.txt']);
+  const fresh = logViews[0].messages.filter(message => message.type === 'snapshot').at(-1)!.data!;
+  pickQueue.push({ label: '恢复到新分支', mode: 'apply', index: true, branch: true }); inputQueue.push('rescue'); warningQueue.push('执行');
+  await logViews[0].listener!({ type: 'stashAction', repoRoot: snapshot.root, token: fresh.stashToken, ...(fresh.stashes as object[])[0], action: 'unstash' });
+  assert.equal((await git.state()).branch, 'rescue'); assert.equal((await git.status())[0].index, 'M');
+  assert.match(warnings.at(-1)!, /原始基线.*rescue/);
+  assert.ok((await git.run(['stash', 'list'])).includes('branch recovery'));
+}));
+
+test('Changes opens native Source Control without repository selection or a custom working-tree action', async () => fixture(async (git, root) => {
+  const view = new Panel('gitWorkbench.log');
+  viewProvider!.resolveWebviewView(view);
+  await view.listener!({ type: 'scm' });
+  assert.equal(executed.at(-1), 'workbench.view.scm');
+  assert.equal(pickerCalls, 0); assert.equal(folderPickerCalls, 0);
+  assert.equal(view.messages.length, 0, 'opening native Changes does not load or refresh a repository');
+
+  await view.listener!({ type: 'init' });
+  const snapshot = view.messages.find(message => message.type === 'snapshot')!.data!;
+  await writeFile(path.join(root, 'code.txt'), 'local work to preserve\n');
+  const before = await git.status(), index = await git.run(['ls-files', '--stage', '-z']);
+  for (const action of ['stage', 'unstage', 'discard', 'diff']) {
+    await view.listener!({ type: 'working', repoRoot: snapshot.root, action, path: 'code.txt', area: 'worktree' });
+  }
+  assert.deepEqual(await git.status(), before);
+  assert.equal(await git.run(['ls-files', '--stage', '-z']), index);
+  assert.equal(await readFile(path.join(root, 'code.txt'), 'utf8'), 'local work to preserve\n');
+  assert.equal(executed.filter(id => id === 'vscode.diff').length, 0);
+  assert.equal(warnings.length, 0); assert.deepEqual(errors, []);
+}));
+
+test('external stash creation automatically updates an already visible Stash list', async () => fixture(async (git, root) => {
+  await commands.get('gitWorkbench.open')!();
+  const view = logViews[0];
+  await view.listener!({ type: 'init' });
+  const update = nextMessage(view, 'stashes');
+  await writeFile(path.join(root, 'code.txt'), 'created through native Source Control\n');
+  await git.mutate(['stash', 'push', '-m', 'Native SCM stash']);
+  const message = await update;
+  assert.equal(message.data!.root, await realpath(git.root));
+  assert.match((message.data!.entries as { subject: string }[])[0].subject, /Native SCM stash/);
+}));
+
+test('external stash drop, pop, clear and creation after clear refresh without rebuilding the commit graph', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'first stash\n');
+  await git.mutate(['stash', 'push', '-m', 'first']);
+  await writeFile(path.join(root, 'code.txt'), 'second stash\n');
+  await git.mutate(['stash', 'push', '-m', 'second']);
+  const { view } = await stashView();
+  const snapshots = view.messages.filter(message => message.type === 'snapshot').length;
+  const head = await git.run(['rev-parse', 'refs/stash']);
+  let update = nextMessage(view, 'stashes');
+  await git.mutate(['stash', 'drop', 'stash@{1}']); // Only the reflog changes; refs/stash stays identical.
+  assert.equal((await update).data!.entries instanceof Array, true);
+  assert.equal(await git.run(['rev-parse', 'refs/stash']), head);
+  update = nextMessage(view, 'stashes');
+  await git.mutate(['stash', 'pop']);
+  assert.deepEqual((await update).data!.entries, []);
+  update = nextMessage(view, 'stashes');
+  await git.mutate(['stash', 'push', '-m', 'recreated']);
+  assert.equal(((await update).data!.entries as unknown[]).length, 1);
+  update = nextMessage(view, 'stashes');
+  await git.mutate(['stash', 'clear']);
+  assert.deepEqual((await update).data!.entries, []);
+  update = nextMessage(view, 'stashes');
+  await writeFile(path.join(root, 'code.txt'), 'after clear\n');
+  await git.mutate(['stash', 'push', '-m', 'after clear']);
+  assert.match(((await update).data!.entries as { subject: string }[])[0].subject, /after clear/);
+  assert.equal(view.messages.filter(message => message.type === 'snapshot').length, snapshots);
+  assert.deepEqual(errors, []);
+}));
+
+test('linked worktree observes Stashes created from the shared main repository', async () => fixture(async (git, root) => {
+  const linked = path.join(root, 'linked-worktree');
+  await git.mutate(['worktree', 'add', '-b', 'linked', linked]);
+  windowStub.activeTextEditor = { document: { uri: Uri.file(path.join(linked, 'code.txt')) } };
+  await commands.get('gitWorkbench.open')!();
+  const view = logViews[0];
+  const update = nextMessage(view, 'stashes');
+  await writeFile(path.join(root, 'code.txt'), 'main repository stash\n');
+  await git.mutate(['stash', 'push', '-m', 'shared stash']);
+  const data = (await update).data!;
+  assert.equal(data.root, await realpath(linked));
+  assert.match((data.entries as { subject: string }[])[0].subject, /shared stash/);
+}));
+
+test('hidden Stash panel catches up when shown and unchanged focus or tab checks preserve its detail token', async () => fixture(async (git, root) => {
+  await commands.get('gitWorkbench.open')!();
+  const view = logViews[0];
+  view.visible = false;
+  await writeFile(path.join(root, 'code.txt'), 'stash while hidden\n');
+  await git.mutate(['stash', 'push', '-m', 'hidden stash']);
+  await new Promise(resolve => setTimeout(resolve, 240));
+  assert.equal(view.messages.some(message => message.type === 'stashes'), false);
+  const update = nextMessage(view, 'stashes');
+  view.visible = true; view.visibilityListeners.forEach(listener => listener());
+  const data = (await update).data!;
+  const entry = (data.entries as Record<string, unknown>[])[0];
+  await view.listener!({ type: 'stashSelect', repoRoot: data.root, token: data.token, ...entry });
+  assert.ok(view.messages.some(message => message.type === 'stashDetail'));
+  const count = view.messages.length;
+  windowStateListeners.forEach(listener => listener({ focused: true }));
+  await view.listener!({ type: 'stashRefresh', repoRoot: data.root });
+  await new Promise(resolve => setTimeout(resolve, 280));
+  assert.equal(view.messages.length, count, 'unchanged list must keep the current token and selected file detail');
+  await view.listener!({ type: 'stashDiff', repoRoot: data.root, token: data.token, ...entry, fileId: 'worktree:code.txt' });
+  assert.equal(executed.at(-1), 'vscode.diff');
+}));
+
+test('disposed Git panel stops Stash notifications and a reopened panel resumes monitoring', async () => fixture(async (git, root) => {
+  await commands.get('gitWorkbench.open')!();
+  const old = logViews[0]; old.dispose();
+  await writeFile(path.join(root, 'code.txt'), 'after disposal\n');
+  await git.mutate(['stash', 'push', '-m', 'after disposal']);
+  await commands.get('gitWorkbench.open')!();
+  const view = logViews[1];
+  assert.ok(view.messages.some(message => message.type === 'snapshot' && (message.data!.stashes as unknown[]).length === 1));
+  const update = nextMessage(view, 'stashes');
+  await git.mutate(['stash', 'clear']);
+  assert.deepEqual((await update).data!.entries, []);
+  assert.equal(old.messages.some(message => message.type === 'stashes'), false);
+}));

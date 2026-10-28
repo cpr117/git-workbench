@@ -1,5 +1,11 @@
-:root { --vscode-editor-font-family: 'SFMono-Regular', Menlo, monospace; }
-:root[data-theme=light] { color-scheme:light; --vscode-editor-background:#fff; --vscode-sideBar-background:#f5f5f5; --vscode-panel-border:#d4d4d4; --vscode-foreground:#252526; --vscode-descriptionForeground:#676767; --vscode-list-activeSelectionBackground:#d5e4ff; --vscode-list-activeSelectionForeground:#1f3764; --vscode-textLink-foreground:#245fc4; }
+:root { --vscode-editor-font-family: Menlo, Consolas, monospace; }
+:root[data-theme=dark], :root[data-theme=hc-dark] { color-scheme:dark; }
+:root[data-theme=light], :root[data-theme=hc-light] { color-scheme:light; --vscode-editor-background:#fff; --vscode-sideBar-background:#f5f5f5; --vscode-panel-border:#d4d4d4; --vscode-foreground:#252526; --vscode-descriptionForeground:#676767; --vscode-list-activeSelectionBackground:#d5e4ff; --vscode-list-activeSelectionForeground:#1f3764; --vscode-textLink-foreground:#245fc4; --vscode-input-background:#fff; --vscode-input-foreground:#252526; --vscode-input-border:#cecece; --vscode-menu-background:#fff; --vscode-menu-foreground:#252526; --vscode-toolbar-hoverBackground:#0000000a; }
 .history-shell { grid-template-columns:250px minmax(320px,1fr); }
 .commit-info { min-height:115px; }
 footer { user-select:none; }
+
+:root[data-theme=hc-dark] { --vscode-editor-background:#000; --vscode-sideBar-background:#000; --vscode-panel-border:#6fc3df; --vscode-foreground:#fff; --vscode-descriptionForeground:#fff; --vscode-list-activeSelectionBackground:#000; --vscode-list-activeSelectionForeground:#fff; --vscode-focusBorder:#f38518; --vscode-textLink-foreground:#21a6ff; --vscode-contrastBorder:#6fc3df; }
+:root[data-theme=hc-light] { --vscode-panel-border:#0f4a85; --vscode-foreground:#292929; --vscode-descriptionForeground:#292929; --vscode-list-activeSelectionBackground:#0f4a85; --vscode-list-activeSelectionForeground:#fff; --vscode-focusBorder:#0f4a85; --vscode-contrastBorder:#0f4a85; }
+:root[data-theme^=hc-] button, :root[data-theme^=hc-] input { border-color:var(--vscode-contrastBorder); }
+:root[data-theme^=hc-] .revision.selected { outline:2px solid var(--vscode-focusBorder); outline-offset:-2px; }

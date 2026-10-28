@@ -109,7 +109,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
 
   private repository(): Git {
     if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
-    if (!this.git) throw new Error(t("请先右键文件夹或项目，选择 Git → 显示差异。"));
+    if (!this.git) throw new Error(t("请先右键文件夹或项目，选择 Git Workbench → 显示差异。"));
     return this.git;
   }
 
