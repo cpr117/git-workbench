@@ -56,6 +56,8 @@ function nextMessage(view: Panel, type: string): Promise<Message> {
 const commands = new Map<string, (...args: unknown[]) => Promise<unknown>>();
 const panels: Panel[] = [];
 const popups: Panel[] = [];
+let popupAttempts = 0;
+let popupStartup: () => Promise<void> = async () => {};
 const logViews: Panel[] = [];
 let viewProvider: { resolveWebviewView(view: Panel): void } | undefined;
 let revisionProvider: { provideTextDocumentContent(uri: Uri): Promise<string> };
@@ -191,14 +193,14 @@ const loader = require('node:module') as { _load: (id: string, ...args: unknown[
 const originalLoad = loader._load;
 let activate: (context: unknown) => Promise<void>;
 try {
-  loader._load = (id, ...args) => id === 'vscode' ? vscodeStub : id === './historyPopup' ? { openHistoryPopup: async () => { const panel = new Panel('nativeHistoryPopup'); panel.popup = true; popups.push(panel); return panel; } } : originalLoad(id, ...args);
+  loader._load = (id, ...args) => id === 'vscode' ? vscodeStub : id === './historyPopup' ? { openHistoryPopup: async () => { popupAttempts++; await popupStartup(); const panel = new Panel('nativeHistoryPopup'); panel.popup = true; popups.push(panel); return panel; } } : originalLoad(id, ...args);
   activate = (require('../src/extension') as { activate: (context: unknown) => Promise<void> }).activate;
 } finally { loader._load = originalLoad; }
 
 async function fixture(task: (git: Git, root: string) => Promise<void>, language = 'zh-cn', initialSettings: Record<string, { globalValue?: unknown; workspaceValue?: unknown }> = {}): Promise<void> {
   vscodeStub.env.language = language; quickPicks.length = 0; confirmationButtons.length = 0;
   for (const popup of popups) popup.dispose();
-  popups.length = 0; presentation = 'editor'; vscodeStub.env.remoteName = undefined;
+  popups.length = 0; popupAttempts = 0; popupStartup = async () => {}; presentation = 'editor'; vscodeStub.env.remoteName = undefined;
   commands.clear(); panels.length = 0; logViews.length = 0; viewProvider = undefined; executed.length = 0; errors.length = 0; infos.length = 0; pickQueue.length = 0; pickerCalls = 0;
   warnings.length = 0; warningQueue.length = 0; inputQueue.length = 0; commandArgs.length = 0;
   folderQueue.length = 0; folderPickerCalls = 0; vscodeStub.workspace.workspaceFolders = [];
@@ -328,12 +330,100 @@ test('file history also uses the popup; reopening replaces the previous popup', 
   popups[1].dispose();
 }));
 
-test('unsupported remote popup does not silently create a history tab', async () => fixture(async () => {
-  presentation = 'popup'; vscodeStub.env.remoteName = 'ssh-remote';
-  await commands.get('gitWorkbench.selectionHistory')!();
-  assert.equal(panels.length, 0); assert.equal(popups.length, 0);
-  assert.ok(errors.some(text => text.includes('macOS 本地工作区')));
-}));
+async function onPlatform(platform: NodeJS.Platform, task: () => Promise<void>): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...original, value: platform });
+  try { await task(); } finally { Object.defineProperty(process, 'platform', original); }
+}
+
+for (const platform of ['win32', 'linux'] as const) for (const command of ['fileHistory', 'selectionHistory']) {
+  test(`${platform} opens ${command} in a tab by default without starting a native helper`, async () => fixture(async () => onPlatform(platform, async () => {
+    presentation = '';
+    await commands.get(`gitWorkbench.${command}`)!();
+    assert.equal(panels.length, 1); assert.equal(popupAttempts, 0);
+    const editor = panels[0]; await editor.listener!({ type: 'init' });
+    const history = editor.messages.find(message => message.type === 'history')!.data!;
+    assert.equal(history.presentation, 'editor'); assert.equal(history.popupSupported, false);
+    assert.match(String(editor.messages.at(-1)!.data!.patch), /\+after/);
+    assert.deepEqual(errors, []); assert.deepEqual(warnings, []); assert.equal(presentation, '');
+  })));
+}
+
+for (const remote of ['ssh-remote', 'dev-container']) for (const configured of ['', 'popup']) {
+  test(`${remote} uses a history tab when presentation is ${configured || 'default'}`, async () => fixture(async () => {
+    presentation = configured; vscodeStub.env.remoteName = remote;
+    await commands.get('gitWorkbench.selectionHistory')!();
+    assert.equal(panels.length, 1); assert.equal(popupAttempts, 0);
+    const editor = panels[0]; await editor.listener!({ type: 'init' });
+    assert.equal(editor.messages.find(message => message.type === 'history')!.data!.presentation, 'editor');
+    assert.match(String(editor.messages.at(-1)!.data!.patch), /\+after/);
+    assert.deepEqual(errors, []); assert.deepEqual(warnings, []); assert.equal(presentation, configured);
+  }));
+}
+
+test('a failed initial macOS popup opens one usable history tab without changing preferences', async () => fixture(async () => onPlatform('darwin', async () => {
+  presentation = ''; popupStartup = async () => { throw new Error('helper unavailable'); };
+  await commands.get('gitWorkbench.fileHistory')!();
+  assert.equal(popupAttempts, 1); assert.equal(popups.length, 0); assert.equal(panels.length, 1);
+  const editor = panels[0]; await editor.listener!({ type: 'init' });
+  const history = editor.messages.find(message => message.type === 'history')!.data!;
+  assert.equal(history.presentation, 'editor'); assert.equal(history.popupSupported, true);
+  assert.match(String(editor.messages.at(-1)!.data!.patch), /\+after/);
+  assert.equal(warnings.length, 1); assert.match(warnings[0], /helper unavailable/);
+  assert.deepEqual(errors, []); assert.equal(presentation, '');
+})));
+
+test('explicit popup failure preserves the current tab and multi-selection and allows retry', async () => fixture(async () => onPlatform('darwin', async () => {
+  await commands.get('gitWorkbench.fileHistory')!(); const editor = panels[0]; await editor.listener!({ type: 'init' });
+  const entries = editor.messages.find(message => message.type === 'history')!.data!.entries as { hash: string }[];
+  const hashes = entries.map(entry => entry.hash);
+  await editor.listener!({ type: 'selectMany', hashes });
+  const detail = editor.messages.at(-1)!.data!;
+  popupStartup = async () => { throw new Error('helper unavailable'); };
+  await editor.listener!({ type: 'presentation', presentation: 'popup', hashes });
+  assert.equal(editor.active, true); assert.equal(panels.length, 1); assert.equal(popups.length, 0);
+  assert.equal(editor.messages.at(-1)!.type, 'error'); assert.deepEqual(detail.hashes, hashes);
+  assert.equal(editor.messages.filter(message => message.type === 'historyDetail').at(-1)!.data, detail);
+  popupStartup = async () => {};
+  await editor.listener!({ type: 'presentation', presentation: 'popup', hashes });
+  assert.equal(editor.active, false); assert.equal(popups.length, 1); assert.equal(panels.length, 1);
+  await popups[0].listener!({ type: 'init' }); assert.deepEqual(popups[0].messages.at(-1)!.data!.hashes, hashes);
+})));
+
+test('repeated presentation messages start one popup while a transition is pending', async () => fixture(async () => onPlatform('darwin', async () => {
+  await commands.get('gitWorkbench.fileHistory')!(); const editor = panels[0]; await editor.listener!({ type: 'init' });
+  const entries = editor.messages.find(message => message.type === 'history')!.data!.entries as { hash: string }[];
+  const message = { type: 'presentation', presentation: 'popup', hashes: [entries[0].hash] };
+  let finish!: () => void;
+  popupStartup = () => new Promise<void>(resolve => { finish = resolve; });
+  const pending = editor.listener!(message);
+  await editor.listener!(message); assert.equal(popupAttempts, 1); assert.equal(panels.length, 1);
+  finish(); await pending;
+  assert.equal(popups.length, 1); assert.equal(editor.active, false);
+})));
+
+
+test('closing the source tab cancels a pending popup switch', async () => fixture(async () => onPlatform('darwin', async () => {
+  await commands.get('gitWorkbench.fileHistory')!(); const editor = panels[0]; await editor.listener!({ type: 'init' });
+  const entries = editor.messages.find(message => message.type === 'history')!.data!.entries as { hash: string }[];
+  let finish!: () => void;
+  popupStartup = () => new Promise<void>(resolve => { finish = resolve; });
+  const pending = editor.listener!({ type: 'presentation', presentation: 'popup', hashes: [entries[0].hash] });
+  editor.dispose(); finish(); await pending;
+  assert.equal(popups.length, 1); assert.equal(popups[0].active, false); assert.equal(panels.length, 1);
+})));
+
+test('disabling a pending history module does not close another module popup', async () => fixture(async () => onPlatform('darwin', async () => {
+  presentation = 'popup'; await commands.get('gitWorkbench.selectionHistory')!(); const selection = popups[0];
+  let finish!: () => void, signalStart!: () => void;
+  const started = new Promise<void>(resolve => { signalStart = resolve; });
+  popupStartup = () => new Promise<void>(resolve => { finish = resolve; signalStart(); });
+  const pending = commands.get('gitWorkbench.fileHistory')!();
+  await started;
+  await setFeature('fileHistory', false); finish(); await pending;
+  assert.equal(selection.active, true); assert.equal(popups.length, 2); assert.equal(popups[1].active, false);
+  assert.equal(panels.length, 0); assert.deepEqual(errors, []);
+})));
 
 test('native history synchronizes high contrast and editor fonts live and disposes appearance subscriptions', async () => fixture(async () => {
   presentation = 'popup'; windowStub.activeColorTheme.kind = vscodeStub.ColorThemeKind.HighContrastLight;
@@ -1072,7 +1162,7 @@ test('invalid folder selection still reports real Git discovery errors', async (
   const nonRepository = await mkdtemp(path.join(tmpdir(), 'git-workbench-not-repo-'));
   try {
     folderQueue.push([Uri.file(nonRepository)]); await commands.get('gitWorkbench.open')!();
-    assert.equal(errors.length, 1); assert.match(errors[0], /Git Workbench:/);
+    assert.equal(errors.length, 1); assert.match(errors[0], /Orbit Git:/);
   } finally { await rm(nonRepository, { recursive: true, force: true }); }
 }));
 
@@ -1087,7 +1177,7 @@ test('English application locale localizes menus and confirmations without chang
   assert.match(warnings[0], /Create branch 功能\/支付 from [a-f0-9]+/);
   assert.deepEqual(confirmationButtons[0], ['Run']);
   assert.equal((await git.refs()).some(ref => ref.name === '功能/支付'), true);
-  assert.equal(quickPicks.at(-2)?.title, 'Git Workbench · Repository Git operations');
+  assert.equal(quickPicks.at(-2)?.title, 'Orbit Git · Repository Git operations');
 }, 'en-US'));
 
 test('English graph and history bootstrap preserve repository text and localized dirty-selection notices', async () => fixture(async (git, root) => {
@@ -1108,7 +1198,7 @@ test('English graph and history bootstrap preserve repository text and localized
 test('unsupported UI languages fall back to English host errors', async () => fixture(async () => {
   windowStub.activeTextEditor = undefined;
   await commands.get('gitWorkbench.fileHistory')!();
-  assert.deepEqual(errors, ['Git Workbench: Open a repository file in the editor first.']);
+  assert.deepEqual(errors, ['Orbit Git: Open a repository file in the editor first.']);
 }, 'fr'));
 
 async function stashView() {

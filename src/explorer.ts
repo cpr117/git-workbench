@@ -18,7 +18,7 @@ async function targetRevision(git: Git, branchesOnly = false): Promise<string | 
   const refs = (await git.refs()).filter(ref => !branchesOnly || !ref.tag);
   const items = refs.map(ref => ({ label: ref.name, description: ref.tag ? t("标签") : ref.remote ? t("远端分支") : t("本地分支"), hash: ref.hash }));
   if (!branchesOnly) items.unshift({ label: t("输入提交 SHA / 引用…"), description: t("指定目标版本"), hash: '' });
-  const pick = await vscode.window.showQuickPick(items, { title: t("Git Workbench · 选择目标版本"), ignoreFocusOut: true });
+  const pick = await vscode.window.showQuickPick(items, { title: t("Orbit Git · 选择目标版本"), ignoreFocusOut: true });
   if (!pick) return undefined;
   if (pick.hash) return assertHash((await git.run(['rev-parse', '--verify', '--end-of-options', `${pick.hash}^{commit}`])).trim());
   const ref = await vscode.window.showInputBox({ prompt: t("提交 SHA、分支或标签（例如 HEAD~2）"), ignoreFocusOut: true });
@@ -98,7 +98,7 @@ export function registerExplorerCommands(register: Register, host: Host): void {
     const changes = await scopeChanges(git, scope); changePaths(changes, scope);
     if (!changes.length) { void vscode.window.showInformationMessage(t("所选范围没有改动。")); return; }
     if ((await git.state()).operation || changes.some(change => isConflict(change.status))) throw new Error(t("请先完成或中止正在进行的 Git 操作并解决冲突。"));
-    const message = await vscode.window.showInputBox({ prompt: t("Stash 说明"), value: `Git Workbench · ${scope || t("整个仓库")}`, ignoreFocusOut: true });
+    const message = await vscode.window.showInputBox({ prompt: t("Stash 说明"), value: `Orbit Git · ${scope || t("整个仓库")}`, ignoreFocusOut: true });
     if (!message?.trim()) return;
     if (await confirm(t("将 {0} 的已跟踪及未跟踪改动保存到 Stash？\n范围外的改动不纳入。忽略文件不包括在内。\n仓库：{1}", scope || t("整个仓库"), git.root))) {
       // Git's path-limited stash still records unrelated staged entries in its index parent.

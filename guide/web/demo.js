@@ -1,5 +1,5 @@
 'use strict';
-// The renderer files are copied verbatim from Git Workbench. This adapter supplies
+// The renderer files are copied verbatim from Orbit Git. This adapter supplies
 // fixed example data only; there is no filesystem, repository or command access.
 const bundled=document.documentElement.hasAttribute('data-bundled-demo');
 const graphView=(document.documentElement.dataset.view||new URLSearchParams(location.search).get('view'))==='graph';

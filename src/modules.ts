@@ -17,10 +17,10 @@ export function moduleLabel(name: ModuleName): string {
   }[name];
 }
 export function requireModule(name: ModuleName): void {
-  if (!readModules()[name]) throw new Error(t('“{0}”已停用，请在 Git Workbench → 功能开关中启用。', moduleLabel(name)));
+  if (!readModules()[name]) throw new Error(t('“{0}”已停用，请在 Orbit Git → 功能开关中启用。', moduleLabel(name)));
 }
 export function requirePanel(): void {
-  if (!readModules().graph && !readModules().stash) throw new Error(t('提交树和 Stash 均已停用，请在 Git Workbench → 功能开关中启用。'));
+  if (!readModules().graph && !readModules().stash) throw new Error(t('提交树和 Stash 均已停用，请在 Orbit Git → 功能开关中启用。'));
 }
 export function commandModules(id: string): ModuleName[] {
   if (id === 'gitWorkbench.compare.close') return [];
@@ -75,10 +75,10 @@ export async function configureModules(): Promise<void> {
     graph: t('提交图、分支导航与提交详情'), selectionHistory: t('追溯所选代码或当前行的历史'), fileHistory: t('文件历史与重命名追踪'),
     blame: t('查看当前行提交与逐行作者标注'), comparison: t('分支、版本与工作区的文件树对比'), stash: t('Stash 列表、文件树与差异查看'),
     operations: t('插件内的提交、暂存、推拉、分支及 Stash 写操作；不影响编辑器原生 Git'), explorerMenu: t('文件、文件夹与项目的右键 Git 菜单'),
-    editorMenu: t('编辑器内的右键 Git 菜单；命令入口仍可使用'), statusBar: t('状态栏 Git Workbench 按钮；功能菜单仍可使用'),
+    editorMenu: t('编辑器内的右键 Git 菜单；命令入口仍可使用'), statusBar: t('状态栏 Orbit Git 按钮；功能菜单仍可使用'),
   };
   const picked = await vscode.window.showQuickPick(moduleNames.map(name => ({ name, label: moduleLabel(name), description: descriptions[name], picked: current[name] })), {
-    title: t('Git Workbench · 功能开关'), placeHolder: t('勾选启用的模块；取消勾选即停用，按 Enter 保存'), canPickMany: true, ignoreFocusOut: true,
+    title: t('Orbit Git · 功能开关'), placeHolder: t('勾选启用的模块；取消勾选即停用，按 Enter 保存'), canPickMany: true, ignoreFocusOut: true,
   });
   if (!picked) return;
   const enabled = new Set(picked.map(item => item.name));

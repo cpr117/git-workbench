@@ -54,8 +54,16 @@ function fixture() {
   const element = (id: string) => document.getElementById(id);
   const search = (query: string) => { element('search').value = query; element('search').oninput!(); };
   const click = (id: string) => element(id).onclick!({});
-  return { entries, messages, element, search, click };
+  return { entries, messages, element, search, click, receive };
 }
+
+test('history offers popup switching only when the host supports native windows', () => {
+  const { entries, element, receive } = fixture();
+  receive('history', { entries, file: 'fixture.txt', presentation: 'editor', popupSupported: false });
+  assert.equal(element('float').hidden, true);
+  receive('history', { entries, file: 'fixture.txt', presentation: 'editor', popupSupported: true });
+  assert.equal(element('float').hidden, false);
+});
 
 test('history buttons skip filtered-out revisions and stop at visible endpoints', () => {
   const { entries, messages, element, search, click } = fixture();

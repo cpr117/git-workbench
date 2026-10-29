@@ -112,7 +112,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   private repository(): Git {
     requireModule('comparison');
     if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
-    if (!this.git) throw new Error(t("请先右键文件、文件夹或项目，选择 Git Workbench → 显示差异。"));
+    if (!this.git) throw new Error(t("请先右键文件、文件夹或项目，选择 Orbit Git → 显示差异。"));
     return this.git;
   }
 
@@ -164,6 +164,9 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
       const count = Math.max(3, commands.filter(command => command.endsWith('.toggleVisibility')).length);
       for (let index = 0; index < count && this.git; index++) await vscode.commands.executeCommand('views.moveViewUp');
     }
+    // Hosts can restore the pane's collapsed state while showing or moving it.
+    // Expand the initialized pane once its visibility and location have settled.
+    if (this.git) await this.tree.reveal(this.nodes[0], { focus: true, select: false, expand: true });
   }
 
   private updateTree(): void {

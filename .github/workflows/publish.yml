@@ -1,0 +1,129 @@
+name: Package and publish Orbit Git
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified package to Marketplace
+        type: boolean
+        default: false
+      pre_release:
+        description: Build and publish a pre-release version
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbit-git-marketplace
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'cpr117/git-workbench' && github.ref == 'refs/heads/main'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate extension identity and version
+        run: |
+          node <<'JS'
+          const pkg = require('./package.json');
+          if (pkg.name !== 'orbit-git' || pkg.publisher !== 'PRCooper'
+            || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(pkg.version)) {
+            throw new Error('Unexpected extension identity or version');
+          }
+          JS
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - name: Compile and test
+        run: |
+          npm run compile
+          node --test --test-concurrency=1 dist/test/*.test.js
+      - run: npm run build:native
+      - name: Package and verify the VSIX
+        shell: bash
+        env:
+          PRE_RELEASE: ${{ inputs.pre_release }}
+          OUTPUT_DIR: ${{ runner.temp }}/orbit-git-package
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          version=$(node -p "require('./package.json').version")
+          package="orbit-git-${version}.vsix"
+          flags=()
+          if [[ "$PRE_RELEASE" == true ]]; then flags+=(--pre-release); fi
+          ./node_modules/.bin/vsce package --no-dependencies --out "$OUTPUT_DIR/$package" "${flags[@]}"
+          python3 <<'PY'
+          import hashlib, json, os, pathlib, zipfile
+          import xml.etree.ElementTree as ET
+          folder = pathlib.Path(os.environ['OUTPUT_DIR'])
+          packages = list(folder.glob('*.vsix'))
+          assert len(packages) == 1, 'Expected exactly one package'
+          package = packages[0]
+          with zipfile.ZipFile(package) as archive:
+              names = archive.namelist()
+              manifest = json.loads(archive.read('extension/package.json'))
+              assert manifest['publisher'] == 'PRCooper' and manifest['name'] == 'orbit-git'
+              excluded = ('extension/.github/', 'extension/.vscode/', 'extension/guide/',
+                          'extension/src/', 'extension/test/', 'extension/dist/test/',
+                          'extension/node_modules/', 'extension/.build/')
+              assert not any(name.startswith(excluded) for name in names), 'Unexpected development files'
+              assert 'extension/media/icon.png' in names
+              assert any(name.startswith('extension/native-bin/Orbit Git History.app/') for name in names)
+              xml = ET.fromstring(archive.read('extension.vsixmanifest'))
+              prerelease = any(item.attrib.get('Id') == 'Microsoft.VisualStudio.Code.PreRelease'
+                               and item.attrib.get('Value') == 'true' for item in xml.iter())
+              assert prerelease == (os.environ['PRE_RELEASE'] == 'true'), 'Incorrect release channel'
+          digest = hashlib.sha256(package.read_bytes()).hexdigest()
+          (folder / 'SHA256SUMS').write_text(digest + '  ' + package.name + '\n')
+          print(package.name + ': verified')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: orbit-git-${{ github.run_id }}
+          path: ${{ runner.temp }}/orbit-git-package/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: inputs.publish && github.repository == 'cpr117/git-workbench' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: orbit-git-${{ github.run_id }}
+          path: ${{ runner.temp }}/orbit-git-package
+      - name: Publish the verified package with GitHub OIDC
+        shell: bash
+        env:
+          PRE_RELEASE: ${{ inputs.pre_release }}
+          INPUT_DIR: ${{ runner.temp }}/orbit-git-package
+        run: |
+          cd "$INPUT_DIR"
+          sha256sum --check SHA256SUMS
+          shopt -s nullglob
+          packages=(*.vsix)
+          [[ ${#packages[@]} -eq 1 ]]
+          flags=()
+          if [[ "$PRE_RELEASE" == true ]]; then flags+=(--pre-release); fi
+          "$GITHUB_WORKSPACE/node_modules/.bin/vsce" publish --oidc --packagePath "${packages[0]}" "${flags[@]}"

@@ -41,7 +41,7 @@ export class PopupTransport implements HistorySurface {
   };
   constructor(private readonly child: ChildProcessWithoutNullStreams, private readonly report: (message: string) => void) {
     this.started = new Promise((resolve, reject) => { this.resolveStart = resolve; this.rejectStart = reject; });
-    const timeout = setTimeout(() => this.fail(new Error(t("历史小窗启动超时，未创建编辑器标签页。"))), 15_000);
+    const timeout = setTimeout(() => this.fail(new Error(t("历史小窗启动超时。"))), 15_000);
     timeout.unref();
     const lines = createInterface({ input: child.stdout });
     child.stderr.setEncoding('utf8');
@@ -97,7 +97,7 @@ export function popupEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export type HistoryTheme = 'light' | 'dark' | 'hc-light' | 'hc-dark';
 
 export async function openHistoryPopup(extensionPath: string, title: string, theme: HistoryTheme, report: (message: string) => void): Promise<HistorySurface> {
-  const binary = path.join(extensionPath, 'native-bin/Git Workbench History.app/Contents/MacOS/GitWorkbenchHistory');
+  const binary = path.join(extensionPath, 'native-bin/Orbit Git History.app/Contents/MacOS/GitWorkbenchHistory');
   try { await chmod(binary, 0o755); } catch { throw new Error(t("原生历史小窗组件不可用，请重新安装包含 macOS 小窗组件的 VSIX。")); }
   const child = spawn(binary, [path.join(extensionPath, 'media'), title, theme, getLocale()], { stdio: ['pipe', 'pipe', 'pipe'], env: popupEnvironment(process.env) });
   const surface = new PopupTransport(child, report);

@@ -178,7 +178,7 @@ export async function perform(git: Git, action: string, hash?: string): Promise<
       await write(['push', '--set-upstream', ...(action === 'forcePush' ? ['--force-with-lease'] : []), '--', remote, `HEAD:refs/heads/${remoteBranch}`], t("推送 {0} 到 {1}/{2}？{3}", state.branch, remote, remoteBranch, action === 'forcePush' ? t("\n此操作会使用 force-with-lease 重写远端历史。") : '')); break;
     }
     case 'stash': {
-      const message = await input(t("Stash 说明"), 'Git Workbench stash');
+      const message = await input(t("Stash 说明"), 'Orbit Git stash');
       if (message) await write(['stash', 'push', '--include-untracked', '-m', message], t("保存已跟踪及未跟踪文件到 Stash？忽略文件不包括在内。")); break;
     }
     case 'stashApply':
@@ -218,7 +218,7 @@ export async function perform(git: Git, action: string, hash?: string): Promise<
       } break;
     }
     case 'scm': await vscode.commands.executeCommand('workbench.view.scm'); break;
-    case 'terminal': { const terminal = vscode.window.createTerminal({ name: 'Git Workbench', cwd: git.root }); terminal.show(); break; }
+    case 'terminal': { const terminal = vscode.window.createTerminal({ name: 'Orbit Git', cwd: git.root }); terminal.show(); break; }
   }
 }
 

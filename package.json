@@ -1,9 +1,9 @@
 {
-  "name": "git-workbench",
-  "displayName": "Git Workbench",
+  "name": "orbit-git",
+  "displayName": "Orbit Git",
   "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
-  "version": "0.14.5",
-  "publisher": "local-tools",
+  "version": "0.15.0",
+  "publisher": "PRCooper",
   "repository": {
     "type": "git",
     "url": "https://github.com/cpr117/git-workbench.git"
@@ -46,8 +46,9 @@
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "build:native": "node scripts/build-native.mjs",
-    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.14.5.vsix",
-    "clean": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\""
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../orbit-git-0.15.0.vsix",
+    "clean": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\"",
+    "vscode:prepublish": "npm run compile"
   },
   "contributes": {
     "viewsContainers": {
@@ -65,7 +66,7 @@
           "id": "gitWorkbench.log",
           "name": "Git Log",
           "type": "webview",
-          "contextualTitle": "Git Workbench",
+          "contextualTitle": "Orbit Git",
           "when": "config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash"
         }
       ],
@@ -81,7 +82,7 @@
       ]
     },
     "configuration": {
-      "title": "Git Workbench",
+      "title": "Orbit Git",
       "properties": {
         "gitWorkbench.historyPresentation": {
           "type": "string",
@@ -214,282 +215,282 @@
       {
         "command": "gitWorkbench.menu",
         "title": "%contributes.commands.0.title%",
-        "category": "Git Workbench"
+        "category": "Orbit Git"
       },
       {
         "command": "gitWorkbench.open",
         "title": "%contributes.commands.1.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "icon": "$(git-merge)",
         "enablement": "(config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash)"
       },
       {
         "command": "gitWorkbench.selectionHistory",
         "title": "%contributes.commands.2.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.selectionHistory"
       },
       {
         "command": "gitWorkbench.fileHistory",
         "title": "%contributes.commands.3.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.fileHistory"
       },
       {
         "command": "gitWorkbench.blame",
         "title": "%contributes.commands.4.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.blame"
       },
       {
         "command": "gitWorkbench.toggleBlame",
         "title": "%contributes.commands.5.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.blame"
       },
       {
         "command": "gitWorkbench.operations",
         "title": "%contributes.commands.6.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.stageSelection",
         "title": "%contributes.commands.7.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.commit",
         "title": "%contributes.commands.8.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.add",
         "title": "%contributes.commands.9.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.exclude",
         "title": "%contributes.commands.10.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.diff",
         "title": "%contributes.commands.11.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.compareRevision",
         "title": "%contributes.commands.12.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.compareBranch",
         "title": "%contributes.commands.13.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.history",
         "title": "%contributes.commands.14.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.graph"
       },
       {
         "command": "gitWorkbench.explorer.rollback",
         "title": "%contributes.commands.15.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.push",
         "title": "Push…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.pull",
         "title": "%contributes.commands.17.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.fetch",
         "title": "Fetch…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.merge",
         "title": "Merge…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.rebase",
         "title": "Rebase…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.branches",
         "title": "%contributes.commands.21.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.newBranch",
         "title": "%contributes.commands.22.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.newTag",
         "title": "%contributes.commands.23.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.reset",
         "title": "Reset HEAD…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.stash",
         "title": "%contributes.commands.25.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
       },
       {
         "command": "gitWorkbench.explorer.unstash",
         "title": "%contributes.commands.26.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
       },
       {
         "command": "gitWorkbench.explorer.remotes",
         "title": "%contributes.commands.27.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.clone",
         "title": "Clone…",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.compare.refresh",
         "title": "%contributes.commands.29.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison",
         "icon": "$(refresh)"
       },
       {
         "command": "gitWorkbench.compare.search",
         "title": "%contributes.commands.30.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison",
         "icon": "$(search)"
       },
       {
         "command": "gitWorkbench.compare.select",
         "title": "%contributes.commands.31.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.viewTree",
         "title": "%contributes.commands.32.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != tree && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.viewList",
         "title": "%contributes.commands.33.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != list && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.name",
         "title": "%contributes.commands.34.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != name && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.path",
         "title": "%contributes.commands.35.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != path && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.status",
         "title": "%contributes.commands.36.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != status && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.close",
         "title": "%contributes.commands.37.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "gitWorkbench.comparisonActive"
       },
       {
         "command": "gitWorkbench.compare.icons.file",
         "title": "%comparison.icons.file%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != file && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.icons.status",
         "title": "%comparison.icons.status%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != status && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.file.commit",
         "title": "%explorer.file.commit%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.file.rollback",
         "title": "%explorer.file.rollback%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.file.stash",
         "title": "%explorer.file.stash%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
       },
       {
         "command": "gitWorkbench.modules",
         "title": "%modules.title%",
-        "category": "Git Workbench",
+        "category": "Orbit Git",
         "icon": "$(settings-gear)"
       }
     ],
     "submenus": [
       {
         "id": "gitWorkbench.editorMenu",
-        "label": "Git Workbench"
+        "label": "Orbit Git"
       },
       {
         "id": "gitWorkbench.explorerMenu",
-        "label": "Git Workbench"
+        "label": "Orbit Git"
       },
       {
         "id": "gitWorkbench.directoryMenu",
-        "label": "Git Workbench"
+        "label": "Orbit Git"
       }
     ],
     "menus": {
@@ -978,7 +979,16 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "1.95.0",
-    "@vscode/vsce": "^3.0.0",
+    "@vscode/vsce": "4.1.0",
     "typescript": "^5.7.0"
+  },
+  "icon": "media/icon.png",
+  "overrides": {
+    "@vscode/vsce": {
+      "@azure/identity": "4.13.0",
+      "@azure/msal-node@3.8.10": {
+        "uuid": "11.1.1"
+      }
+    }
   }
 }

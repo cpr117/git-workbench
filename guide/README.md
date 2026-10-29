@@ -1,6 +1,6 @@
-# Git Workbench 使用指南网站
+# Orbit Git 使用指南网站
 
-插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。安装包、插件源码和校验文件均从 [qimaotech/git-workbench](https://github.com/qimaotech/git-workbench/releases/latest) 下载。
+插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。安装包、插件源码和校验文件均从 [cpr117/git-workbench](https://github.com/cpr117/git-workbench/releases/latest) 下载。
 
 ## 开发与预览
 
@@ -29,7 +29,7 @@ python3 guide/tools/preview.py
 
 `guide/` 纳入项目 Git；生成的 `site/` 不提交。根目录 `.vscodeignore` 排除 `guide/**`，因此插件 VSIX 不包含本网站。公开源码可从项目 Git 提交或标签生成，避免上传本地依赖和构建缓存。
 
-更新插件版本时，同步修改 `web/index.html` 中的版本、下载链接与 `web/app.js` 中的安装命令，先确认组织仓库的对应 Release 附件已发布。
+更新插件版本时，同步修改 `web/index.html` 中的版本、下载链接与 `web/app.js` 中的安装命令，先确认项目仓库的对应 Release 附件已发布。
 
 ## 演示加载回归
 

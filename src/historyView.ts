@@ -30,17 +30,32 @@ export async function openHistoryView(
   context: vscode.ExtensionContext, git: Git, entries: HistoryItem[], file: string,
   range: { start: number; end: number; notice?: string } | undefined,
   openCommit: (git: Git, hash: string) => Promise<void>,
-  options: { presentation?: 'popup' | 'editor'; hashes?: string[] } = {},
+  options: { presentation?: 'popup' | 'editor'; hashes?: string[]; cancelled?: () => boolean } = {},
 ): Promise<void> {
   const module = range ? 'selectionHistory' : 'fileHistory';
   requireModule(module);
   if (!entries.length) { void vscode.window.showInformationMessage(t("没有找到历史记录。")); return; }
   const title = range ? t("选区历史 · {0}:{1}–{2}", path.basename(file), range.start, range.end) : t("文件历史 · {0}", path.basename(file));
-  const presentation = options.presentation ?? vscode.workspace.getConfiguration('gitWorkbench').get<string>('historyPresentation', 'popup');
-  let panel: HistorySurface;
+  const requested = options.presentation ?? vscode.workspace.getConfiguration('gitWorkbench').get<string>('historyPresentation', 'popup');
+  const popupSupported = process.platform === 'darwin' && !vscode.env.remoteName;
+  if (options.presentation === 'popup' && !popupSupported) throw new Error(t("原生历史小窗当前支持 macOS 本地工作区。需要标签页时可显式设置 gitWorkbench.historyPresentation 为 editor。"));
+  let presentation = requested === 'popup' && popupSupported ? 'popup' : 'editor';
+  let native: HistorySurface | undefined;
   if (presentation === 'popup') {
-    if (process.platform !== 'darwin' || vscode.env.remoteName) throw new Error(t("原生历史小窗当前支持 macOS 本地工作区。需要标签页时可显式设置 gitWorkbench.historyPresentation 为 editor。"));
-    panel = await openHistoryPopup(context.extensionUri.fsPath, title, popupAppearance().theme, message => { void vscode.window.showErrorMessage(`Git Workbench: ${message}`); });
+    try {
+      native = await openHistoryPopup(context.extensionUri.fsPath, title, popupAppearance().theme, message => { void vscode.window.showErrorMessage(`Orbit Git: ${message}`); });
+    } catch (error) {
+      if (options.cancelled?.()) return;
+      if (options.presentation === 'popup') throw error;
+      if (!readModules()[module]) return;
+      presentation = 'editor';
+      void vscode.window.showWarningMessage(t("历史小窗未能打开，已改用标签页。{0}", error instanceof Error ? error.message : String(error)));
+    }
+  }
+  if (options.cancelled?.() || !readModules()[module]) { native?.dispose(); return; }
+  let panel: HistorySurface;
+  if (native) {
+    panel = native;
     activePopup?.dispose();
     activePopup = panel;
     panel.onDidDispose(() => { if (activePopup === panel) activePopup = undefined; });
@@ -112,7 +127,7 @@ export async function openHistoryView(
       requireModule(module);
       switch (msg.type) {
         case 'init':
-          await send('history', { file, root: git.root, range, presentation, modules: readModules(), entries: entries.map(({ patch: _patch, file: _file, ...commit }) => commit) });
+          await send('history', { file, root: git.root, range, presentation, popupSupported, modules: readModules(), entries: entries.map(({ patch: _patch, file: _file, ...commit }) => commit) });
           if (panel.popup) await send('appearance', popupAppearance());
           if (options.hashes?.length) { await showMany(options.hashes); options = { ...options, hashes: undefined }; break; }
           if (Array.isArray(msg.hashes) && msg.hashes.length > 1) { await showMany(msg.hashes); break; }
@@ -125,7 +140,7 @@ export async function openHistoryView(
           if (hashes.some(hash => !entries.some(entry => entry.hash === hash))) throw new Error(t("请选择列表中的提交。"));
           switching = true;
           try {
-            await openHistoryView(context, git, entries, file, range, openCommit, { presentation: msg.presentation, hashes });
+            await openHistoryView(context, git, entries, file, range, openCommit, { presentation: msg.presentation, hashes, cancelled: () => disposed });
             panel.dispose();
           } finally { switching = false; }
           break;

@@ -182,7 +182,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(18).toString('hex');
     const media = (file: string) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', file));
-    return `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Git Workbench</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};window.gitWorkbenchModules=${JSON.stringify(readModules())};</script><script nonce="${nonce}" src="${media('i18n.js')}"></script><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('comparisonTree.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
+    return `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${media('workbench.css')}"><title>Orbit Git</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};window.gitWorkbenchModules=${JSON.stringify(readModules())};</script><script nonce="${nonce}" src="${media('i18n.js')}"></script><script nonce="${nonce}" src="${media('selection.js')}"></script><script nonce="${nonce}" src="${media('logModel.js')}"></script><script nonce="${nonce}" src="${media('comparisonTree.js')}"></script><script nonce="${nonce}" src="${media('workbench.js')}"></script></body></html>`;
   }
 
   private send(type: string, data: unknown): void { void this.panel?.webview.postMessage({ type, data }); }
@@ -190,7 +190,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (error instanceof vscode.CancellationError) return;
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(message); this.send('error', message);
-    void vscode.window.showErrorMessage(`Git Workbench: ${message}`, t("查看日志")).then(choice => { if (choice) output.show(); });
+    void vscode.window.showErrorMessage(`Orbit Git: ${message}`, t("查看日志")).then(choice => { if (choice) output.show(); });
   }
 
   async refresh(): Promise<void> {
@@ -254,9 +254,9 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
     if (!this.git) this.setRepository(await this.repository());
     const source = this.git;
     for (;;) {
-      const group = await vscode.window.showQuickPick(getOperationGroups().map(group => ({ ...group, ids: group.ids.filter(id => readModules().stash || !id.startsWith('stash')) })).filter(group => group.ids.length), { title: `Git Workbench · ${t("仓库 Git 操作")}`, placeHolder: hash ? t("提交 {0} · 选择功能分类", hash.slice(0, 8)) : t("选择功能分类；提交操作默认以 HEAD 为目标") });
+      const group = await vscode.window.showQuickPick(getOperationGroups().map(group => ({ ...group, ids: group.ids.filter(id => readModules().stash || !id.startsWith('stash')) })).filter(group => group.ids.length), { title: `Orbit Git · ${t("仓库 Git 操作")}`, placeHolder: hash ? t("提交 {0} · 选择功能分类", hash.slice(0, 8)) : t("选择功能分类；提交操作默认以 HEAD 为目标") });
       if (!group) return;
-      const pick = await vscode.window.showQuickPick([{ label: t("$(arrow-left) 返回功能分类"), id: 'back' }, ...group.ids.map(id => ({ label: getActions()[id], id }))], { title: `Git Workbench · ${group.label}`, placeHolder: t("选择操作") });
+      const pick = await vscode.window.showQuickPick([{ label: t("$(arrow-left) 返回功能分类"), id: 'back' }, ...group.ids.map(id => ({ label: getActions()[id], id }))], { title: `Orbit Git · ${group.label}`, placeHolder: t("选择操作") });
       if (!pick) return;
       if (pick.id === 'back') continue;
       if (source !== this.git) throw new Error(t("仓库已切换，请重新选择操作。"));
@@ -388,7 +388,7 @@ class Workbench implements vscode.Disposable, vscode.WebviewViewProvider {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   await migrateModuleSettings();
   setLocale(vscode.env.language);
-  output = vscode.window.createOutputChannel('Git Workbench');
+  output = vscode.window.createOutputChannel('Orbit Git');
   const blameDecoration = vscode.window.createTextEditorDecorationType({ before: { color: new vscode.ThemeColor('editorLineNumber.foreground'), margin: '0 2em 0 0', fontStyle: 'normal' } });
   const decorated = new Set<string>();
   const register = (id: string, callback: (...args: unknown[]) => Promise<unknown>) => {
@@ -400,7 +400,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (error) {
         if (error instanceof vscode.CancellationError) return;
         output.appendLine(String(error));
-        void vscode.window.showErrorMessage(`Git Workbench: ${error instanceof Error ? error.message : String(error)}`);
+        void vscode.window.showErrorMessage(`Orbit Git: ${error instanceof Error ? error.message : String(error)}`);
       }
     }));
   };
@@ -443,7 +443,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(['selectionHistory', 'fileHistory', 'blame'].some(name => readModules()[name as 'selectionHistory' | 'fileHistory' | 'blame']) ? [{ label: t("$(history) 历史与追溯"), command: 'history' }] : []),
         ...(readModules().operations ? [{ label: `$(tools) ${t("仓库 Git 操作")}`, command: 'gitWorkbench.operations' }] : []),
         { label: `$(settings-gear) ${t('功能开关')}`, command: 'gitWorkbench.modules' },
-      ], { title: 'Git Workbench', placeHolder: t("选择功能分类") });
+      ], { title: 'Orbit Git', placeHolder: t("选择功能分类") });
       if (!group) return;
       if (group.command !== 'history') { await vscode.commands.executeCommand(group.command); return; }
       const choice = await vscode.window.showQuickPick([
@@ -452,7 +452,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(readModules().fileHistory ? [{ label: t("查看文件历史"), command: 'gitWorkbench.fileHistory' }] : []),
         ...(readModules().blame ? [{ label: t("查看当前行提交"), command: 'gitWorkbench.blame' }] : []),
         ...(readModules().blame ? [{ label: t("切换逐行作者标注"), command: 'gitWorkbench.toggleBlame' }] : []),
-      ], { title: t("Git Workbench · 历史与追溯"), placeHolder: t("选择历史功能") });
+      ], { title: t("Orbit Git · 历史与追溯"), placeHolder: t("选择历史功能") });
       if (!choice) return;
       if (choice.command === 'back') continue;
       await vscode.commands.executeCommand(choice.command); return;
@@ -515,7 +515,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   }));
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 20);
-  status.text = '$(git-merge) Git Workbench'; status.command = 'gitWorkbench.open'; status.tooltip = t("打开提交图与 Git 操作"); status.show();
+  status.text = '$(git-merge) Orbit Git'; status.command = 'gitWorkbench.open'; status.tooltip = t("打开提交图与 Git 操作"); status.show();
   const updateModules = () => {
     closeDisabledHistoryViews();
     if (!readModules().blame) { for (const visible of vscode.window.visibleTextEditors) visible.setDecorations(blameDecoration, []); decorated.clear(); }

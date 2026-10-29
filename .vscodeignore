@@ -2,6 +2,7 @@ node_modules/**
 src/**
 test/**
 .vscode/**
+.github/**
 tsconfig.json
 package-lock.json
 dist/test/**

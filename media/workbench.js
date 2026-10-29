@@ -56,7 +56,7 @@
       <section class="stash-list-pane"><div class="stash-toolbar"><strong>Stash</strong><button id="stash-create">${t("新建 Stash…")}</button></div><div id="stash-list" role="listbox" aria-label="${t("Stash 列表")}"></div></section>
       <section class="stash-files-pane"><div class="stash-toolbar"><strong id="stash-heading">${t("选择 Stash 查看文件")}</strong><div id="stash-actions"></div></div><div id="stash-info"></div><div class="stash-toolbar"><input id="stash-search" type="search" placeholder="${t("筛选文件路径")}" aria-label="${t("筛选文件路径")}"><button id="stash-expand">${t("全部展开")}</button><button id="stash-collapse">${t("全部折叠")}</button></div><div id="stash-files"></div></section>
     </main>
-    <main id="modules-empty" hidden><p>${t("提交树和 Stash 均已停用，请在 Git Workbench → 功能开关中启用。")}</p></main>
+    <main id="modules-empty" hidden><p>${t("提交树和 Stash 均已停用，请在 Orbit Git → 功能开关中启用。")}</p></main>
     <footer class="footer"><span id="root-path">${t("本地 Git · 数据不上传")}</span><span id="footer-hint">Shift ${t("多选 · 右键提交操作")}</span></footer>
     <div id="context-menu" class="context-menu" role="menu" hidden></div>`;
 

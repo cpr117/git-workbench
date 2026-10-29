@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, copyFileSync } from 'node:fs';
+import { mkdirSync, copyFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 if (process.platform !== 'darwin') throw new Error('原生历史小窗需要在 macOS 上构建。');
 const root = fileURLToPath(new URL('../', import.meta.url));
-const contents = path.join(root, 'native-bin/Git Workbench History.app/Contents');
+const contents = path.join(root, 'native-bin/Orbit Git History.app/Contents');
 const build = path.join(root, '.build/native');
+rmSync(path.join(root, 'native-bin'), { recursive: true, force: true });
 mkdirSync(path.join(contents, 'MacOS'), { recursive: true });
 mkdirSync(build, { recursive: true });
 copyFileSync(path.join(root, 'native/Info.plist'), path.join(contents, 'Info.plist'));

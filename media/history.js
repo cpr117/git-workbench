@@ -119,6 +119,7 @@
       state.entries = data.entries; state.presentation = data.presentation;
       $('mapping').textContent = data.range?.notice || ''; $('mapping').hidden = !data.range?.notice;
       $('float').textContent = state.presentation === 'popup' ? t("在标签页中打开") : t("在弹窗中打开");
+      $('float').hidden = data.popupSupported === false;
       $('float').title = t("保留所选提交并切换展示方式；不更改默认设置");
       $('title').textContent = data.range ? t("选区历史") : t("文件历史");
       $('file').textContent = data.file; $('file').title = `${data.root}/${data.file}`;
