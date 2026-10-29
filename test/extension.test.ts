@@ -61,6 +61,9 @@ let viewProvider: { resolveWebviewView(view: Panel): void } | undefined;
 let revisionProvider: { provideTextDocumentContent(uri: Uri): Promise<string> };
 let presentation = 'editor';
 const comparisonSettings = new Map<string, unknown>();
+const settingScopes = new Map<string, { globalValue?: unknown; workspaceValue?: unknown }>();
+const configurationWrites: { key: string; value: unknown; target: number }[] = [];
+const statusItem = { text: '', command: '', tooltip: '', visible: false, show() { this.visible = true; }, hide() { this.visible = false; }, dispose: noop };
 type ConfigurationEvent = { affectsConfiguration(key: string): boolean };
 let configurationListener: ((event: ConfigurationEvent) => void) | undefined;
 const configurationCallbacks = new Set<(event: ConfigurationEvent) => void>();
@@ -82,7 +85,7 @@ const folderQueue: unknown[] = [];
 let folderPickerCalls = 0;
 let nativeCommands: string[] = [];
 let pickerCalls = 0;
-const quickPicks: { labels: string[]; title?: string; placeHolder?: string }[] = [];
+const quickPicks: { labels: string[]; picked?: boolean[]; canPickMany?: boolean; title?: string; placeHolder?: string }[] = [];
 const confirmationButtons: string[][] = [];
 interface ComparisonNode { name: string; path: string; file?: { path: string }; children?: ComparisonNode[]; }
 let comparisonProvider: { getChildren(node?: ComparisonNode): ComparisonNode[]; getParent(node: ComparisonNode): ComparisonNode | undefined; getTreeItem(node: ComparisonNode): { collapsibleState: number; description?: string; tooltip?: string; resourceUri?: Uri; iconPath?: { id: string }; command?: { arguments?: unknown[] } } } | undefined;
@@ -97,18 +100,19 @@ const windowStub = {
       await tabListener?.({ closed }); return true;
     },
   },
+  visibleTextEditors: [] as { setDecorations(...args: unknown[]): void }[],
   activeTextEditor: undefined as unknown,
   activeColorTheme: { kind: 2 },
   onDidChangeActiveColorTheme: (listener: () => void) => { themeListener = listener; return { dispose: () => { if (themeListener === listener) themeListener = undefined; } }; },
   createOutputChannel: () => ({ appendLine: noop, show: noop, dispose: noop }),
   createTextEditorDecorationType: disposable,
   registerFileDecorationProvider: (provider: typeof decorationProvider) => { decorationProvider = provider; return disposable(); },
-  createStatusBarItem: () => ({ text: '', command: '', tooltip: '', show: noop, dispose: noop }),
+  createStatusBarItem: () => statusItem,
   createWebviewPanel: (viewType: string) => { const panel = new Panel(viewType); panels.push(panel); return panel; },
   createTreeView: (id: string, options: { treeDataProvider: typeof comparisonProvider; showCollapseAll: boolean }) => { assert.equal(id, 'gitWorkbench.compareFiles'); assert.equal(options.showCollapseAll, true); comparisonProvider = options.treeDataProvider; comparisonTreeState = { message: undefined, description: '' }; return { get message() { return comparisonTreeState.message; }, set message(value: string | undefined) { comparisonTreeState.message = value; }, get description() { return comparisonTreeState.description; }, set description(value: string) { comparisonTreeState.description = value; }, dispose: noop, reveal: async (node: ComparisonNode | undefined, options: unknown) => { treeReveals.push({ node, options }); } }; },
   registerWebviewViewProvider: (id: string, provider: typeof viewProvider) => { assert.equal(id, 'gitWorkbench.log'); viewProvider = provider; return disposable(); },
   withProgress: async (_options: unknown, task: () => Promise<unknown>) => task(),
-  showQuickPick: async (items: readonly (string | { label: string })[] = [], options?: { title?: string; placeHolder?: string }) => { quickPicks.push({ labels: items.map(item => typeof item === 'string' ? item : item.label), ...options }); pickerCalls++; return pickQueue.shift(); },
+  showQuickPick: async (items: readonly (string | { label: string; picked?: boolean })[] = [], options?: { title?: string; placeHolder?: string; canPickMany?: boolean }) => { quickPicks.push({ picked: items.map(item => typeof item !== 'string' && item.picked === true), labels: items.map(item => typeof item === 'string' ? item : item.label), ...options }); pickerCalls++; return pickQueue.shift(); },
   showOpenDialog: async () => { folderPickerCalls++; return folderQueue.shift(); },
   showInputBox: async () => inputQueue.shift(),
   showWarningMessage: async (text: string, ...items: unknown[]) => { warnings.push(text); confirmationButtons.push(items.filter(item => typeof item === 'string') as string[]); const answer = warningQueue.shift(); return typeof answer === 'function' ? answer() : answer; },
@@ -117,7 +121,7 @@ const windowStub = {
   showTextDocument: async () => undefined,
 };
 const vscodeStub = {
-  Uri, TabInputTextDiff, CancellationError, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { static File = { id: 'file' }; static Folder = { id: 'folder' }; constructor(readonly id: string) {} },
+  Uri, TabInputTextDiff, CancellationError, Range: class { constructor(readonly startLine: number, readonly startCharacter: number, readonly endLine: number, readonly endCharacter: number) {} }, ThemeColor: class { constructor(readonly id: string) {} }, ThemeIcon: class { static File = { id: 'file' }; static Folder = { id: 'folder' }; constructor(readonly id: string) {} },
   TreeItem: class { constructor(readonly label: string, readonly collapsibleState: number) {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   EventEmitter: class { listeners = new Set<(value: unknown) => void>(); event = (listener: (value: unknown) => void) => { this.listeners.add(listener); return { dispose: () => this.listeners.delete(listener) }; }; fire = (value: unknown) => { this.listeners.forEach(listener => listener(value)); }; dispose = () => this.listeners.clear(); },
@@ -126,7 +130,34 @@ const vscodeStub = {
   StatusBarAlignment: { Left: 1 }, ViewColumn: { One: 1, Active: -1, Beside: -2 }, ProgressLocation: { Window: 10 },
   window: windowStub,
   workspace: {
-    getConfiguration: () => ({ get: (key: string, fallback?: unknown) => key === 'historyPresentation' ? presentation || fallback : comparisonSettings.get(key) ?? fallback, inspect: () => undefined, update: async (key: string, value: unknown) => { comparisonSettings.set(key, value); configurationListener?.({ affectsConfiguration: name => name === `gitWorkbench.${key}` }); } }),
+    getConfiguration: () => ({
+      get: (key: string, fallback?: unknown) => {
+        if (key === 'historyPresentation') return presentation || fallback;
+        if (key === 'modules') {
+          const values = settingScopes.get(key);
+          return { ...(values?.globalValue as object), ...(values?.workspaceValue as object) };
+        }
+        return comparisonSettings.get(key) ?? fallback;
+      },
+      inspect: (key: string) => {
+        if (settingScopes.has(key)) return settingScopes.get(key);
+        if (key.startsWith('modules.')) {
+          const parent = settingScopes.get('modules'), name = key.slice('modules.'.length);
+          return { globalValue: (parent?.globalValue as Record<string, unknown>)?.[name], workspaceValue: (parent?.workspaceValue as Record<string, unknown>)?.[name] };
+        }
+        return undefined;
+      },
+      update: async (key: string, value: unknown, target = 1) => {
+        const values = settingScopes.get(key) || {}, field = target === 2 ? 'workspaceValue' : 'globalValue';
+        if (JSON.stringify(values[field]) === JSON.stringify(value)) return;
+        configurationWrites.push({ key, value, target });
+        if (value === undefined) delete values[field]; else values[field] = value;
+        if (Object.keys(values).length) settingScopes.set(key, values); else settingScopes.delete(key);
+        const effective = values.workspaceValue ?? values.globalValue;
+        if (effective === undefined) comparisonSettings.delete(key); else comparisonSettings.set(key, effective);
+        configurationListener?.({ affectsConfiguration: name => name === `gitWorkbench.${key}` || `gitWorkbench.${key}`.startsWith(name + '.') || name.startsWith(`gitWorkbench.${key}.`) });
+      },
+    }),
     onDidChangeConfiguration: (listener: (event: ConfigurationEvent) => void) => { configurationCallbacks.add(listener); configurationListener = event => configurationCallbacks.forEach(callback => callback(event)); return { dispose: () => configurationCallbacks.delete(listener) }; },
     isTrusted: true, workspaceFolders: [] as { uri: Uri }[], onDidChangeTextDocument: disposable, onDidCloseTextDocument: disposable,
     registerTextDocumentContentProvider: (_scheme: string, provider: typeof revisionProvider) => { revisionProvider = provider; return disposable(); },
@@ -158,20 +189,23 @@ const vscodeStub = {
 // Git history is still produced by a real temporary repository.
 const loader = require('node:module') as { _load: (id: string, ...args: unknown[]) => unknown };
 const originalLoad = loader._load;
-let activate: (context: unknown) => void;
+let activate: (context: unknown) => Promise<void>;
 try {
   loader._load = (id, ...args) => id === 'vscode' ? vscodeStub : id === './historyPopup' ? { openHistoryPopup: async () => { const panel = new Panel('nativeHistoryPopup'); panel.popup = true; popups.push(panel); return panel; } } : originalLoad(id, ...args);
-  activate = (require('../src/extension') as { activate: (context: unknown) => void }).activate;
+  activate = (require('../src/extension') as { activate: (context: unknown) => Promise<void> }).activate;
 } finally { loader._load = originalLoad; }
 
-async function fixture(task: (git: Git, root: string) => Promise<void>, language = 'zh-cn'): Promise<void> {
+async function fixture(task: (git: Git, root: string) => Promise<void>, language = 'zh-cn', initialSettings: Record<string, { globalValue?: unknown; workspaceValue?: unknown }> = {}): Promise<void> {
   vscodeStub.env.language = language; quickPicks.length = 0; confirmationButtons.length = 0;
   for (const popup of popups) popup.dispose();
   popups.length = 0; presentation = 'editor'; vscodeStub.env.remoteName = undefined;
   commands.clear(); panels.length = 0; logViews.length = 0; viewProvider = undefined; executed.length = 0; errors.length = 0; infos.length = 0; pickQueue.length = 0; pickerCalls = 0;
   warnings.length = 0; warningQueue.length = 0; inputQueue.length = 0; commandArgs.length = 0;
   folderQueue.length = 0; folderPickerCalls = 0; vscodeStub.workspace.workspaceFolders = [];
-  comparisonProvider = undefined; treeReveals.length = 0; tabs.length = 0; tabListener = undefined; comparisonSettings.clear(); configurationCallbacks.clear(); configurationListener = undefined; themeListener = undefined; windowStub.activeColorTheme.kind = 2;
+  comparisonProvider = undefined; treeReveals.length = 0; tabs.length = 0; tabListener = undefined; comparisonSettings.clear(); settingScopes.clear(); configurationWrites.length = 0;
+  for (const [key, values] of Object.entries(initialSettings)) { settingScopes.set(key, { ...values }); comparisonSettings.set(key, values.workspaceValue ?? values.globalValue); }
+  windowStub.visibleTextEditors = [];
+  configurationCallbacks.clear(); configurationListener = undefined; themeListener = undefined; windowStub.activeColorTheme.kind = 2;
   const root = await mkdtemp(path.join(tmpdir(), 'git-workbench-host-'));
   const git = new Git(root);
   const subscriptions: { dispose(): void }[] = [];
@@ -186,7 +220,7 @@ async function fixture(task: (git: Git, root: string) => Promise<void>, language
       document: { uri: Uri.file(file), isDirty: false, getText: () => 'after\ncontext\n' },
       selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 }, isEmpty: false },
     };
-    activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions });
+    await activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions });
     await task(git, root);
   } finally { subscriptions.reverse().forEach(item => item.dispose()); setLocale('zh-cn'); await rm(root, { recursive: true, force: true }); }
 }
@@ -462,6 +496,158 @@ test('folder and project menus expose grouped Git operations without flattening 
   }
 }));
 
+test('Explorer file menu exposes scoped Git actions with file-specific names', async () => fixture(async () => {
+  const manifest = JSON.parse(await readFile(path.resolve(__dirname, '../../package.json'), 'utf8'));
+  const contribution = manifest.contributes.menus['explorer/context'].find((item: { submenu: string }) => item.submenu === 'gitWorkbench.explorerMenu');
+  assert.match(contribution.when, /!explorerResourceIsFolder/);
+  const menu = manifest.contributes.menus['gitWorkbench.explorerMenu'];
+  for (const id of ['file.commit', 'add', 'exclude', 'diff', 'compareRevision', 'compareBranch', 'file.rollback', 'file.stash', 'unstash']) {
+    const command = `gitWorkbench.explorer.${id}`;
+    assert.ok(menu.some((item: { command: string }) => item.command === command), `Missing file action ${command}`);
+    assert.ok(commands.has(command), command);
+    assert.ok(manifest.contributes.menus.commandPalette.some((item: { command: string; when: string }) => item.command === command && item.when === 'false'));
+  }
+  assert.ok(menu.some((item: { command: string }) => item.command === 'gitWorkbench.fileHistory'));
+  const english = JSON.parse(await readFile(path.resolve(__dirname, '../../package.nls.json'), 'utf8'));
+  const chinese = JSON.parse(await readFile(path.resolve(__dirname, '../../package.nls.zh-cn.json'), 'utf8'));
+  for (const [id, zh, en] of [['commit', '提交文件…', 'Commit File…'], ['rollback', '回滚文件到 HEAD…', 'Roll Back File to HEAD…'], ['stash', 'Stash 所选文件…', 'Stash Selected File…']]) {
+    const item = manifest.contributes.commands.find((item: { command: string }) => item.command === `gitWorkbench.explorer.file.${id}`);
+    assert.equal(chinese[item.title.slice(1, -1)], zh); assert.equal(english[item.title.slice(1, -1)], en);
+  }
+}));
+
+test('Explorer stages and commits only the clicked file, preserving other staged files and literal path characters', async () => fixture(async (git, root) => {
+  const name = 'selected [x]*.txt', selected = Uri.file(path.join(root, name));
+  for (const file of [name, 'selected x.txt']) await writeFile(path.join(root, file), 'base\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'file fixtures']);
+  for (const file of [name, 'selected x.txt', 'code.txt']) await writeFile(path.join(root, file), 'saved changes\n');
+  await git.mutate(['add', '--', 'code.txt']);
+  warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.add')!(selected);
+  const status = await git.status();
+  assert.equal(status.find(item => item.path === name)!.index, 'M');
+  assert.equal(status.find(item => item.path === 'selected x.txt')!.index, ' ');
+  const outside = await git.run(['show', ':code.txt']);
+  inputQueue.push('commit clicked file'); warningQueue.push('执行');
+  const picks = pickerCalls;
+  await commands.get('gitWorkbench.explorer.file.commit')!(selected);
+  assert.equal(pickerCalls, picks, 'single file skips the redundant file picker');
+  assert.deepEqual((await git.changes((await git.head())!)).files.map(file => file.path), [name]);
+  assert.equal(await git.run(['show', ':code.txt']), outside);
+  assert.equal((await git.status()).find(item => item.path === 'code.txt')!.index, 'M');
+  assert.equal(await git.run(['show', ':selected x.txt']), 'base\n');
+  assert.deepEqual(errors, []);
+}));
+
+test('Explorer file rollback preserves other staged files and keeps newly added content', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'selected.txt'), 'base\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'selected file']);
+  await writeFile(path.join(root, 'selected.txt'), 'discard saved change\n');
+  await writeFile(path.join(root, 'code.txt'), 'keep staged outside\n'); await git.mutate(['add', '-A']);
+  warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.file.rollback')!(Uri.file(path.join(root, 'selected.txt')));
+  assert.equal(await readFile(path.join(root, 'selected.txt'), 'utf8'), 'base\n');
+  assert.equal(await git.run(['show', ':code.txt']), 'keep staged outside\n');
+  await writeFile(path.join(root, 'new.txt'), 'keep new content\n'); await git.mutate(['add', '--', 'new.txt']);
+  warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.file.rollback')!(Uri.file(path.join(root, 'new.txt')));
+  assert.equal(await readFile(path.join(root, 'new.txt'), 'utf8'), 'keep new content\n');
+  assert.equal((await git.status()).find(item => item.path === 'new.txt')!.status, '??');
+  assert.deepEqual(errors, []);
+}));
+
+test('Explorer file comparisons use the clicked file and native Diff for HEAD, revision, branch and untracked additions', async () => fixture(async (git, root) => {
+  const file = 'nested/selected.txt', uri = Uri.file(path.join(root, file));
+  await mkdir(path.join(root, 'nested')); await writeFile(uri.fsPath, 'selected base\n');
+  await writeFile(path.join(root, 'nested/other.txt'), 'other base\n');
+  await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'comparison fixtures']);
+  const head = (await git.head())!;
+  await writeFile(uri.fsPath, 'selected saved\n'); await writeFile(path.join(root, 'nested/other.txt'), 'other saved\n');
+  for (const action of ['diff', 'compareRevision', 'compareBranch']) {
+    if (action !== 'diff') pickQueue.push({ hash: head });
+    await commands.get(`gitWorkbench.explorer.${action}`)!(uri);
+    assert.deepEqual(comparisonFiles(), [file]);
+    assert.equal(comparisonProvider!.getChildren()[0].file!.path, file, 'a single file is not wrapped in a fake directory');
+    const index = executed.lastIndexOf('vscode.diff'), [left, right] = commandArgs[index] as [Uri, Uri];
+    assert.equal(await revisionProvider.provideTextDocumentContent(left), 'selected base\n');
+    assert.equal(right.fsPath, path.join(await realpath(root), file));
+  }
+  const newUri = Uri.file(path.join(root, 'new.txt')); await writeFile(newUri.fsPath, 'new content\n');
+  await commands.get('gitWorkbench.explorer.diff')!(newUri);
+  assert.deepEqual(comparisonFiles(), ['new.txt']);
+  const index = executed.lastIndexOf('vscode.diff'), [left, right] = commandArgs[index] as [Uri, Uri];
+  assert.equal(await revisionProvider.provideTextDocumentContent(left), '');
+  assert.equal(right.fsPath, path.join(await realpath(root), 'new.txt'));
+  assert.deepEqual(errors, []);
+}));
+
+test('Explorer file history and local exclude target the clicked resource instead of the active editor', async () => fixture(async (git, root) => {
+  const uri = Uri.file(path.join(root, 'selected.txt'));
+  await writeFile(uri.fsPath, 'selected\n'); await git.mutate(['add', '-A']); await git.mutate(['commit', '-m', 'selected history']);
+  await commands.get('gitWorkbench.fileHistory')!(uri);
+  await panels[0].listener!({ type: 'init' });
+  assert.equal(panels[0].messages.find(message => message.type === 'history')!.data!.file, 'selected.txt');
+  const ignored = Uri.file(path.join(root, 'ignore [x]*.txt')); await writeFile(ignored.fsPath, 'local only\n');
+  await writeFile(path.join(root, 'ignore x.txt'), 'keep sibling\n');
+  warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.exclude')!(ignored);
+  assert.match(await git.run(['status', '--ignored', '--porcelain', '--', 'ignore [x]*.txt']), /^!! /);
+  assert.match(await git.run(['status', '--porcelain', '--', 'ignore x.txt']), /^\?\? /);
+  assert.deepEqual(errors, []);
+}));
+
+test('Explorer file Stash saves only its target and rejects unrelated staged content before writing', async () => fixture(async (git, root) => {
+  const uri = Uri.file(path.join(root, 'code.txt'));
+  await writeFile(uri.fsPath, 'selected change\n');
+  await writeFile(path.join(root, 'other.txt'), 'outside change\n');
+  await git.mutate(['add', '--', 'other.txt']);
+  const before = await git.status(), index = await git.run(['ls-files', '--stage', '-z']);
+  inputQueue.push('must not include staged sibling'); warningQueue.push('执行');
+  await commands.get('gitWorkbench.explorer.file.stash')!(uri);
+  assert.match(errors.at(-1)!, /范围之外存在已暂存/);
+  assert.equal(await git.run(['stash', 'list']), '');
+  assert.deepEqual(await git.status(), before); assert.equal(await git.run(['ls-files', '--stage', '-z']), index);
+  await git.mutate(['reset', 'HEAD', '--', 'other.txt']); errors.length = 0;
+  inputQueue.push('one file only'); warningQueue.push('执行');
+  await commands.get('gitWorkbench.explorer.file.stash')!(uri);
+  assert.deepEqual((await git.run(['stash', 'show', '--name-only'])).trim().split('\n'), ['code.txt']);
+  assert.equal(await readFile(uri.fsPath, 'utf8'), 'after\ncontext\n');
+  assert.equal(await readFile(path.join(root, 'other.txt'), 'utf8'), 'outside change\n');
+  assert.deepEqual(errors, []);
+}));
+
+test('Explorer can commit and stash a new file without capturing active-editor changes', async () => fixture(async (git, root) => {
+  const selected = Uri.file(path.join(root, 'new.txt'));
+  await writeFile(selected.fsPath, 'new selected content\n');
+  await writeFile(path.join(root, 'code.txt'), 'active editor changes\n');
+  inputQueue.push('stash new file'); warningQueue.push('执行');
+  await commands.get('gitWorkbench.explorer.file.stash')!(selected);
+  await assert.rejects(readFile(selected.fsPath), { code: 'ENOENT' });
+  assert.equal((await git.run(['ls-tree', '-r', '--name-only', 'stash@{0}^3'])).trim(), 'new.txt');
+  assert.equal(await readFile(path.join(root, 'code.txt'), 'utf8'), 'active editor changes\n');
+  await writeFile(selected.fsPath, 'new file to commit\n');
+  inputQueue.push('commit new file'); warningQueue.push('执行');
+  await commands.get('gitWorkbench.explorer.file.commit')!(selected);
+  assert.deepEqual((await git.changes((await git.head())!)).files.map(file => file.path), ['new.txt']);
+  assert.equal((await git.status()).find(item => item.path === 'code.txt')!.worktree, 'M');
+  assert.deepEqual(errors, []);
+}));
+
+test('cancelled, directory, multi-file and untrusted file commands leave the repository unchanged', async () => fixture(async (git, root) => {
+  const uri = Uri.file(path.join(root, 'code.txt'));
+  await writeFile(uri.fsPath, 'preserve local work\n');
+  const before = await git.status(), head = await git.head(), index = await git.run(['ls-files', '--stage', '-z']);
+  for (const action of ['commit', 'rollback', 'stash']) {
+    if (action !== 'rollback') inputQueue.push('cancel write');
+    await commands.get(`gitWorkbench.explorer.file.${action}`)!(uri);
+  }
+  await commands.get('gitWorkbench.explorer.file.commit')!(Uri.file(root));
+  await commands.get('gitWorkbench.explorer.file.rollback')!(uri, [uri, Uri.file(path.join(root, 'other.txt'))]);
+  vscodeStub.workspace.isTrusted = false;
+  try { await commands.get('gitWorkbench.explorer.file.rollback')!(uri); }
+  finally { vscodeStub.workspace.isTrusted = true; }
+  assert.equal(errors.length, 3); assert.match(errors[0], /单个文件/); assert.match(errors[1], /单个文件/); assert.match(errors[2], /信任/);
+  assert.deepEqual(await git.status(), before); assert.equal(await git.head(), head);
+  assert.equal(await git.run(['ls-files', '--stage', '-z']), index);
+  assert.equal(await readFile(uri.fsPath, 'utf8'), 'preserve local work\n');
+}));
+
 test('project root history discovers the selected repository and folder history limits commit files', async () => fixture(async (git, root) => {
   await mkdir(path.join(root, 'folder'));
   await writeFile(path.join(root, 'folder/a.txt'), 'folder\n');
@@ -514,7 +700,7 @@ test('directory comparison opens the SCM tree and a tracked native comparison ta
   assert.equal(manifest.contributes.views.scm[0].id, 'gitWorkbench.compareFiles');
   const strings = JSON.parse(await readFile(path.resolve(__dirname, '../../package.nls.zh-cn.json'), 'utf8'));
   assert.equal(strings[manifest.contributes.views.scm[0].name.slice(1, -1)], '对比');
-  assert.equal(manifest.contributes.views.scm[0].when, 'gitWorkbench.comparisonActive');
+  assert.equal(manifest.contributes.views.scm[0].when, 'gitWorkbench.comparisonActive && config.gitWorkbench.modules.comparison');
   assert.equal(manifest.contributes.views.scm[0].visibility, 'collapsed');
   assert.equal(comparisonProvider!.getTreeItem(nodes[0]).description, undefined);
   assert.equal(comparisonProvider!.getTreeItem(fileNode).tooltip, '');
@@ -580,7 +766,7 @@ test('comparison view and sort preferences rebuild the same SCM tree, retain pat
   assert.deepEqual(comparisonProvider!.getChildren().map(node => node.name), ['a.txt', 'z.txt']);
   assert.equal(comparisonSettings.get('comparisonViewMode'), 'list');
   assert.equal(comparisonSettings.get('comparisonSortOrder'), 'status');
-  activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] });
+  await activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] });
   await commands.get('gitWorkbench.explorer.diff')!(Uri.file(path.join(root, 'folder')));
   assert.deepEqual(comparisonProvider!.getChildren().map(node => node.name), ['a.txt', 'z.txt']);
   // Settings edited outside the view menu take effect immediately too.
@@ -592,7 +778,7 @@ test('comparison view and sort preferences rebuild the same SCM tree, retain pat
   const manifest = JSON.parse(await readFile(path.resolve(__dirname, '../../package.json'), 'utf8'));
   const menu = manifest.contributes.menus['view/title'] as { command: string; group: string; when: string }[];
   assert.equal(menu.filter(item => item.command.includes('compare.view') || item.command.includes('compare.sort')).length, 5);
-  assert.ok(menu.filter(item => item.command.includes('compare.view') || item.command.includes('compare.sort')).every(item => item.when === 'view == gitWorkbench.compareFiles' && !item.group.startsWith('navigation')));
+  assert.ok(menu.filter(item => item.command.includes('compare.view') || item.command.includes('compare.sort')).every(item => item.when === 'view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison' && !item.group.startsWith('navigation')));
 }));
 
 test('comparison file icons use comparison statuses independently of working-tree files and clear decorations on close', async () => fixture(async (git, root) => {
@@ -643,7 +829,7 @@ test('comparison icon styles switch live, persist and retain list paths and nati
   let item = comparisonProvider!.getTreeItem(node);
   assert.equal(item.iconPath!.id, 'diff-modified'); assert.equal(item.resourceUri, undefined);
   assert.equal(item.description, '修改'); assert.equal(decorationProvider.provideFileDecoration(uri), undefined);
-  activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] }); await open();
+  await activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] }); await open();
   node = comparisonProvider!.getChildren()[0].children![0];
   assert.equal(comparisonProvider!.getTreeItem(node).iconPath!.id, 'diff-modified', 'saved choice survives reactivation');
   await commands.get('gitWorkbench.compare.viewList')!();
@@ -660,7 +846,7 @@ test('comparison icon styles switch live, persist and retain list paths and nati
   const manifest = JSON.parse(await readFile(path.resolve(__dirname, '../../package.json'), 'utf8'));
   assert.equal(manifest.contributes.configuration.properties['gitWorkbench.comparisonIconStyle'].default, 'file');
   const entries = manifest.contributes.menus['view/title'].filter((entry: { command: string }) => entry.command.includes('compare.icons.'));
-  assert.equal(entries.length, 2); assert.ok(entries.every((entry: { when: string; group: string }) => entry.when === 'view == gitWorkbench.compareFiles' && !entry.group.startsWith('navigation')));
+  assert.equal(entries.length, 2); assert.ok(entries.every((entry: { when: string; group: string }) => entry.when === 'view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison' && !entry.group.startsWith('navigation')));
   assert.deepEqual(errors, []);
 }));
 
@@ -1119,3 +1305,237 @@ test('disposed Git panel stops Stash notifications and a reopened panel resumes 
   assert.deepEqual((await update).data!.entries, []);
   assert.equal(old.messages.some(message => message.type === 'stashes'), false);
 }));
+
+const moduleNames = ['graph', 'selectionHistory', 'fileHistory', 'blame', 'comparison', 'stash', 'operations', 'explorerMenu', 'editorMenu', 'statusBar'];
+function moduleValue(name: string): unknown {
+  return (vscodeStub.workspace.getConfiguration().get('modules') as Record<string, unknown>)[name] ?? true;
+}
+async function setFeature(name: string, enabled: boolean): Promise<void> {
+  const settings = vscodeStub.workspace.getConfiguration(), values = settings.inspect('modules');
+  const workspace = values?.workspaceValue as Record<string, boolean> | undefined;
+  const target = workspace?.[name] !== undefined ? 2 : 1;
+  const previous = (target === 2 ? workspace : values?.globalValue) as Record<string, boolean> | undefined;
+  await settings.update('modules', { ...previous, [name]: enabled }, target);
+}
+
+
+test('module switches default on, cancel preserves values, all-off remains recoverable from the grouped menu', async () => fixture(async () => {
+  await commands.get('gitWorkbench.modules')!();
+  assert.deepEqual(quickPicks[0].picked, moduleNames.map(() => true));
+  assert.equal(quickPicks[0].canPickMany, true); assert.equal(comparisonSettings.size, 0);
+  pickQueue.push([]); await commands.get('gitWorkbench.modules')!();
+  for (const name of moduleNames) assert.equal(moduleValue(name), false);
+  await commands.get('gitWorkbench.menu')!();
+  assert.deepEqual(quickPicks.at(-1)!.labels, ['$(settings-gear) 功能开关']);
+  await commands.get('gitWorkbench.open')!(); assert.equal(logViews.length, 0);
+  errors.length = 0;
+  pickQueue.push(moduleNames.map(name => ({ name }))); await commands.get('gitWorkbench.modules')!();
+  for (const name of moduleNames) assert.equal(moduleValue(name), true);
+  await commands.get('gitWorkbench.fileHistory')!(); assert.equal(panels.length, 1); assert.deepEqual(errors, []);
+}));
+
+test('history disable closes owned history surfaces, blocks hidden commands, and can be re-enabled', async () => fixture(async () => {
+  await commands.get('gitWorkbench.fileHistory')!();
+  const old = panels[0]; assert.equal(old.active, true);
+  await setFeature('fileHistory', false); assert.equal(old.active, false);
+  for (const id of ['fileHistory']) await commands.get(`gitWorkbench.${id}`)!();
+  assert.equal(panels.length, 1); assert.equal(errors.length, 1); assert.match(errors[0], /已停用/);
+  await setFeature('fileHistory', true); errors.length = 0;
+  await commands.get('gitWorkbench.fileHistory')!(); assert.equal(panels.length, 2); assert.deepEqual(errors, []);
+}));
+
+test('turning off comparison removes the file tree and owned native diff without closing unrelated tabs', async () => fixture(async (_git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'local edit\ncontext\n');
+  await commands.get('gitWorkbench.explorer.diff')!(Uri.file(root));
+  assert.ok(comparisonProvider!.getChildren().length); assert.equal(tabs.length, 1);
+  const unrelated = { input: new TabInputTextDiff(Uri.file('/unrelated/a'), Uri.file('/unrelated/b')), label: 'User diff' }; tabs.push(unrelated);
+  await setFeature('comparison', false);
+  assert.equal(comparisonProvider!.getChildren().length, 0); assert.deepEqual(tabs, [unrelated]);
+  await commands.get('gitWorkbench.explorer.diff')!(Uri.file(root));
+  assert.match(errors.at(-1)!, /文件与目录对比.*已停用/);
+  await commands.get('gitWorkbench.compare.close')!();
+}));
+
+test('Explorer integration can be disabled independently of direct history commands', async () => fixture(async (_git, root) => {
+  await setFeature('explorerMenu', false);
+  await commands.get('gitWorkbench.explorer.add')!(Uri.file(root));
+  assert.match(errors.at(-1)!, /资源管理器右键菜单.*已停用/);
+  errors.length = 0;
+  await commands.get('gitWorkbench.fileHistory')!(Uri.file(path.join(root, 'code.txt')));
+  assert.equal(panels.length, 1); assert.deepEqual(errors, []);
+}));
+
+test('write switch rejects stale webview actions while read-only log and native diffs remain usable', async () => fixture(async (git, root) => {
+  await commands.get('gitWorkbench.open')!(); const view = logViews[0];
+  const repoRoot = view.messages.find(message => message.type === 'snapshot')!.data!.root;
+  const head = (await git.head())!; await view.listener!({ type: 'select', repoRoot, hash: head });
+  await writeFile(path.join(root, 'code.txt'), 'local edit\ncontext\n');
+  await setFeature('operations', false);
+  assert.equal(view.messages.filter(message => message.type === 'modules').at(-1)!.data!.operations, false);
+  for (const payload of [{ type: 'action', action: 'stageAll' }, { type: 'restore', path: 'code.txt' }, { type: 'menu' }]) await view.listener!({ ...payload, repoRoot });
+  assert.equal((await git.run(['diff', '--cached'])).trim(), '');
+  assert.equal(await readFile(path.join(root, 'code.txt'), 'utf8'), 'local edit\ncontext\n');
+  assert.equal(warnings.length, 0); assert.equal(errors.length, 3);
+  errors.length = 0;
+  await view.listener!({ type: 'diff', repoRoot, path: 'code.txt' });
+  assert.equal(executed.includes('vscode.diff'), true); assert.deepEqual(errors, []);
+  await commands.get('gitWorkbench.stageSelection')!(); assert.equal(executed.includes('git.stageSelectedRanges'), false);
+}));
+
+test('disabling writes during confirmation prevents the mutation itself', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'local edit\ncontext\n');
+  warningQueue.push(async () => { await setFeature('operations', false); return '执行'; });
+  await commands.get('gitWorkbench.explorer.add')!(Uri.file(root));
+  assert.equal((await git.run(['diff', '--cached'])).trim(), '');
+  assert.match(errors.at(-1)!, /Git 写操作.*已停用/);
+}));
+
+test('log and stash modules gate webview messages independently and keep history readable', async () => fixture(async (git, root) => {
+  await commands.get('gitWorkbench.open')!(); const view = logViews[0];
+  await setFeature('graph', false);
+  const snapshot = nextMessage(view, 'snapshot'); await view.listener!({ type: 'refresh' }); await snapshot;
+  assert.deepEqual(view.messages.filter(message => message.type === 'snapshot').at(-1)!.data!.commits, []);
+  await view.listener!({ type: 'select', repoRoot: root, hash: await git.head() }); assert.match(errors.at(-1)!, /提交树与分支.*已停用/);
+  await commands.get('gitWorkbench.fileHistory')!(); await panels[0].listener!({ type: 'init' });
+  assert.equal((panels[0].messages.find(message => message.type === 'history')!.data!.modules as { graph: boolean }).graph, false);
+  await setFeature('stash', false);
+  const before = view.messages.filter(message => message.type === 'snapshot').length;
+  await view.listener!({ type: 'init' });
+  assert.equal(view.messages.filter(message => message.type === 'snapshot').length, before);
+  await view.listener!({ type: 'stashSelect', repoRoot: root }); assert.match(errors.at(-1)!, /Stash.*已停用/);
+}));
+
+test('turning off history closes the native popup too', async () => fixture(async () => {
+  presentation = 'popup'; await commands.get('gitWorkbench.fileHistory')!();
+  assert.equal(popups[0].active, true); await setFeature('fileHistory', false); assert.equal(popups[0].active, false);
+}));
+
+test('Stash writes and branch writes cannot bypass the write switch through webview messages', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'stash version\n'); await git.mutate(['stash', 'push', '-m', 'Keep stash']);
+  await commands.get('gitWorkbench.open')!(); const view = logViews[0];
+  const snapshot = view.messages.find(message => message.type === 'snapshot')!.data!;
+  const entry = (snapshot.stashes as { hash: string; ref: string }[])[0];
+  await setFeature('operations', false);
+  await view.listener!({ type: 'stashAction', action: 'drop', hash: entry.hash, ref: entry.ref, token: snapshot.stashToken, repoRoot: snapshot.root });
+  await view.listener!({ type: 'branchAction', action: 'delete', ref: 'refs/heads/main', repoRoot: snapshot.root });
+  assert.equal((await git.run(['stash', 'list'])).includes('Keep stash'), true);
+  assert.equal((await git.run(['branch', '--list', 'main'])).includes('main'), true);
+  assert.equal(warnings.length, 0); assert.equal(errors.length, 2); assert.ok(errors.every(error => /Git 写操作.*已停用/.test(error)));
+}));
+
+test('turning off Stash during its confirmation blocks the pending stash without blocking other Git operations', async () => fixture(async (git, root) => {
+  await writeFile(path.join(root, 'code.txt'), 'local change\n'); inputQueue.push('Test');
+  warningQueue.push(async () => { await setFeature('stash', false); return '执行'; });
+  await commands.get('gitWorkbench.explorer.file.stash')!(Uri.file(path.join(root, 'code.txt')));
+  assert.equal((await git.run(['stash', 'list'])).trim(), ''); assert.equal(await readFile(path.join(root, 'code.txt'), 'utf8'), 'local change\n');
+  assert.match(errors.at(-1)!, /Stash.*已停用/); errors.length = 0;
+  warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.add')!(Uri.file(path.join(root, 'code.txt')));
+  assert.ok((await git.run(['diff', '--cached'])).includes('local change')); assert.deepEqual(errors, []);
+}));
+
+test('manifest exposes one compact module list with ten enabled rows and conditions all menu routes', () => {
+  const manifest = require('../../package.json');
+  assert.equal(Object.keys(manifest.contributes.configuration.properties).filter(key => key.startsWith('gitWorkbench.modules.')).length, 0);
+  const list = manifest.contributes.configuration.properties['gitWorkbench.modules'];
+  assert.equal(list.type, 'object'); assert.equal(list.additionalProperties, false); assert.equal(list.scope, 'window');
+  assert.equal(Object.keys(list.properties).length, 10);
+  assert.equal(Object.keys(manifest.contributes.configuration.properties).some(key => key.startsWith('gitWorkbench.features.')), false);
+  for (const name of moduleNames) {
+    const setting = list.properties[name];
+    assert.equal(setting.type, 'boolean'); assert.equal(list.default[name], true);
+  }
+  for (const menu of manifest.contributes.menus['explorer/context']) assert.match(menu.when, /config.gitWorkbench.modules.explorerMenu/);
+  const view = manifest.contributes.views['git-workbench-panel'][0];
+  assert.equal(view.when, 'config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash');
+  assert.ok(manifest.contributes.commands.some((command: { command: string }) => command.command === 'gitWorkbench.modules'));
+  assert.equal(manifest.contributes.menus.commandPalette.find((item: { command: string }) => item.command === 'gitWorkbench.modules').when, 'false', 'module settings remain grouped under the main menu');
+});
+
+test('file and selection histories are independent and disabling either closes only its owned views', async () => fixture(async () => {
+  await commands.get('gitWorkbench.fileHistory')!(); const file = panels[0];
+  await commands.get('gitWorkbench.selectionHistory')!(); const selection = panels[1];
+  await setFeature('selectionHistory', false);
+  assert.equal(selection.active, false); assert.equal(file.active, true);
+  await commands.get('gitWorkbench.selectionHistory')!(); assert.match(errors.at(-1)!, /选区与当前行历史.*已停用/); errors.length = 0;
+  await commands.get('gitWorkbench.fileHistory')!(); assert.equal(panels.at(-1)!.active, true);
+  await setFeature('selectionHistory', true); await commands.get('gitWorkbench.selectionHistory')!(); const reopened = panels.at(-1)!;
+  await setFeature('fileHistory', false); assert.equal(reopened.active, true); assert.equal(file.active, false);
+  assert.deepEqual(errors, []);
+}));
+
+test('blame switch clears existing annotations immediately and does not disable either history command', async () => fixture(async () => {
+  const decorations: unknown[][] = [];
+  const active = windowStub.activeTextEditor as { document: { lineCount?: number }; selection: { active?: { line: number } }; setDecorations?: (...args: unknown[]) => void };
+  active.document.lineCount = 2; active.selection.active = { line: 0 };
+  active.setDecorations = (...args: unknown[]) => decorations.push(args);
+  windowStub.visibleTextEditors = [active as { setDecorations(...args: unknown[]): void }];
+  await commands.get('gitWorkbench.toggleBlame')!(); assert.ok((decorations.at(-1)![1] as unknown[]).length);
+  await setFeature('blame', false); assert.deepEqual(decorations.at(-1)![1], []);
+  await commands.get('gitWorkbench.blame')!(); await commands.get('gitWorkbench.toggleBlame')!(); assert.equal(errors.length, 2); errors.length = 0;
+  await commands.get('gitWorkbench.fileHistory')!(); await commands.get('gitWorkbench.selectionHistory')!(); assert.equal(panels.length, 2); assert.deepEqual(errors, []);
+  await setFeature('blame', true); await commands.get('gitWorkbench.toggleBlame')!(); assert.ok((decorations.at(-1)![1] as unknown[]).length);
+}));
+
+test('editor menu and status bar switches hide entries without disabling underlying commands or recovery', async () => fixture(async () => {
+  assert.equal(statusItem.visible, true); await setFeature('statusBar', false); assert.equal(statusItem.visible, false);
+  await setFeature('editorMenu', false);
+  await commands.get('gitWorkbench.fileHistory')!(); assert.equal(panels.length, 1); assert.deepEqual(errors, []);
+  await commands.get('gitWorkbench.modules')!(); assert.equal(quickPicks.at(-1)!.labels.length, 10);
+  await setFeature('statusBar', true); assert.equal(statusItem.visible, true);
+  const manifest = require('../../package.json');
+  assert.ok(manifest.contributes.menus['editor/context'].every((item: { when: string }) => item.when.includes('config.gitWorkbench.modules.editorMenu')));
+}));
+
+test('history submenu filters each disabled module separately', async () => fixture(async () => {
+  await setFeature('selectionHistory', false); await setFeature('blame', false);
+  pickQueue.push({ command: 'history' }); await commands.get('gitWorkbench.menu')!();
+  assert.deepEqual(quickPicks.at(-1)!.labels, ['$(arrow-left) 返回功能分类', '查看文件历史']);
+  await setFeature('fileHistory', false); await commands.get('gitWorkbench.menu')!();
+  assert.equal(quickPicks.at(-1)!.labels.some(label => label.includes('历史与追溯')), false);
+}));
+
+test('upgrade migrates all six preview keys, fans out history, preserves explicit module preferences and removes legacy values in their original scopes', async () => fixture(async () => {
+  assert.equal(moduleValue('graph'), false);
+  assert.equal((settingScopes.get('modules')!.globalValue as Record<string, boolean>).stash, false); assert.equal((settingScopes.get('modules')!.workspaceValue as Record<string, boolean>).stash, true);
+  assert.equal(moduleValue('selectionHistory'), false); assert.equal(moduleValue('fileHistory'), true); assert.equal(moduleValue('blame'), false);
+  for (const name of ['comparison', 'explorerMenu', 'operations']) assert.equal(moduleValue(name), false);
+  assert.equal([...settingScopes.keys()].some(key => key.startsWith('features.')), false);
+  const writes = configurationWrites.length;
+  await activate({ extensionUri: Uri.file(path.resolve(__dirname, '../..')), subscriptions: [] }); assert.equal(configurationWrites.length, writes, 'migration is idempotent');
+}, 'zh-cn', {
+  'features.log': { globalValue: false }, 'features.stash': { globalValue: false, workspaceValue: true },
+  'features.history': { workspaceValue: false }, 'modules.fileHistory': { workspaceValue: true },
+  'features.comparison': { workspaceValue: false }, 'features.explorerMenu': { globalValue: false }, 'features.operations': { workspaceValue: false },
+}));
+
+test('upgrading ten separate settings consolidates every explicit value into one object', async () => fixture(async () => {
+  for (const name of moduleNames) assert.equal(moduleValue(name), false);
+  assert.equal([...settingScopes.keys()].some(key => key.startsWith('modules.')), false);
+  assert.equal(Object.keys(settingScopes.get('modules')!.workspaceValue as object).length, 10);
+  assert.equal(statusItem.visible, false);
+}, 'en', Object.fromEntries(moduleNames.map(name => ['modules.' + name, { workspaceValue: false }]))));
+
+test('disabling writes during local exclude preparation prevents the eventual filesystem write', async () => fixture(async (_git, root) => {
+  const location = path.join(root, '.git/info/exclude'), before = await readFile(location, 'utf8');
+  const run = Git.prototype.run;
+  Git.prototype.run = async function (...args: Parameters<Git['run']>) {
+    const result = await run.apply(this, args);
+    if (args[0][0] === 'rev-parse' && args[0].includes('info/exclude')) await setFeature('operations', false);
+    return result;
+  };
+  try {
+    warningQueue.push('执行'); await commands.get('gitWorkbench.explorer.exclude')!(Uri.file(path.join(root, 'code.txt')));
+    assert.match(errors.at(-1)!, /Git 写操作.*已停用/);
+    assert.equal(await readFile(location, 'utf8'), before);
+  } finally { Git.prototype.run = run; }
+}));
+
+test('compact module list preserves partial user/workspace overrides and saves picker changes once per scope', async () => fixture(async () => {
+  assert.equal(moduleValue('graph'), false); assert.equal(moduleValue('fileHistory'), true); assert.equal(moduleValue('statusBar'), false);
+  assert.equal(configurationWrites.length, 0, 'an already consolidated object does not change on activation');
+  pickQueue.push(moduleNames.map(name => ({ name })).filter(item => item.name !== 'stash'));
+  await commands.get('gitWorkbench.modules')!();
+  assert.equal(moduleValue('graph'), true); assert.equal(moduleValue('statusBar'), true); assert.equal(moduleValue('stash'), false);
+  assert.equal(configurationWrites.filter(write => write.key === 'modules').length, 2);
+  assert.equal(configurationWrites.some(write => write.key.startsWith('modules.')), false);
+}, 'en', { modules: { globalValue: { graph: false }, workspaceValue: { statusBar: false } } }));

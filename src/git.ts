@@ -93,10 +93,11 @@ export function graphRows(commits: Commit[]): GraphRow[] {
 }
 
 export class Git {
-  constructor(readonly root: string, private readonly log: (text: string) => void = () => {}) {}
+  constructor(readonly root: string, private readonly log: (text: string) => void = () => {}, private readonly beforeMutation?: (args: readonly string[]) => void) {}
 
   run(args: string[], input?: string, mutation = false, acceptedExitCodes: readonly number[] = []): Promise<string> {
     return new Promise((resolve, reject) => {
+      if (mutation) this.beforeMutation?.(args);
       const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat', GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'true' };
       for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete (env as NodeJS.ProcessEnv)[key];
       const child = execFile('git', ['--no-pager', '--literal-pathspecs', '-c', 'color.ui=false', '-c', 'core.quotepath=false', ...args], {

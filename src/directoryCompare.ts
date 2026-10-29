@@ -1,4 +1,5 @@
 import { t } from './i18n';
+import { requireModule } from './modules';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { Change, Git, assertHash } from './git';
@@ -21,6 +22,7 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   private readonly tree: vscode.TreeView<ComparisonNode>;
   private git?: Git;
   private scope = '';
+  private fileScope = false;
   private base = '';
   private target?: string;
   private baseLabel = '';
@@ -108,16 +110,19 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
   }
 
   private repository(): Git {
+    requireModule('comparison');
     if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
-    if (!this.git) throw new Error(t("请先右键文件夹或项目，选择 Git Workbench → 显示差异。"));
+    if (!this.git) throw new Error(t("请先右键文件、文件夹或项目，选择 Git Workbench → 显示差异。"));
     return this.git;
   }
 
-  async open(git: Git, scope: string, revision: string, options: { target?: string; baseLabel?: string; targetLabel?: string } = {}): Promise<void> {
+  async open(git: Git, scope: string, revision: string, options: { target?: string; baseLabel?: string; targetLabel?: string; fileScope?: boolean } = {}): Promise<void> {
     if (!vscode.workspace.isTrusted) throw new Error(t("请先信任此工作区。"));
+    requireModule('comparison');
     const ticket = ++this.listGeneration;
     const base = assertHash(revision), target = options.target ? assertHash(options.target) : undefined;
     this.git = git; this.scope = scope; this.base = base; this.target = target; this.query = '';
+    this.fileScope = options.fileScope === true;
     this.baseLabel = options.baseLabel || base.slice(0, 8); this.targetLabel = options.targetLabel || target?.slice(0, 8) || t("工作区");
     this.files = []; this.nodes = []; this.changed.fire();
     await this.refresh();
@@ -163,9 +168,10 @@ export class DirectoryComparison implements vscode.TreeDataProvider<ComparisonNo
 
   private updateTree(): void {
     this.updateDecorations();
-    const root = model.build(this.files, this.scope, this.query, { mode: this.mode, sort: this.sort });
+    const treeScope = this.fileScope ? path.posix.dirname(this.scope).replace(/^\.$/, '') : this.scope;
+    const root = model.build(this.files, treeScope, this.query, { mode: this.mode, sort: this.sort });
     root.name = path.posix.basename(this.scope) || path.basename(this.repository().root);
-    this.nodes = this.mode === 'tree' && root.children?.length ? [root] : root.children || [];
+    this.nodes = !this.fileScope && this.mode === 'tree' && root.children?.length ? [root] : root.children || [];
     this.tree.description = t("{0} · {1} 个文件 · {2} ↔ {3}{4}", path.posix.basename(this.scope) || path.basename(this.repository().root), this.files.length, this.baseLabel, this.targetLabel, this.query ? t(" · 筛选：{0}", this.query) : '');
     // A persistent message takes height away from the native scrolling tree,
     // particularly when SCM's other sections leave only a few visible rows.

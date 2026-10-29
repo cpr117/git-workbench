@@ -59,15 +59,19 @@ export async function workingChanges(git: Git, scope: string, base: string): Pro
   return files;
 }
 
-export async function excludeScope(git: Git, scope: string, directory: boolean): Promise<string> {
+export async function excludeScope(git: Git, scope: string, directory: boolean, beforeWrite: () => void = () => {}): Promise<string> {
   if (scope) git.file(scope);
   const location = path.resolve(git.root, (await git.run(['rev-parse', '--git-path', 'info/exclude'])).trim());
+  beforeWrite();
   await mkdir(path.dirname(location), { recursive: true });
   let existing = '';
   try { existing = await readFile(location, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  if (!scope) { if (!existing) await appendFile(location, ''); return location; }
+  if (!scope) { if (!existing) { beforeWrite(); await appendFile(location, ''); } return location; }
   if (/[\r\n]/.test(scope)) throw new Error(t("包含换行的路径不能写为 Git 忽略规则。"));
   const pattern = `/${scope.replace(/[\\*?\[\] ]/g, '\\$&')}${directory ? '/' : ''}`;
-  if (!existing.split(/\r?\n/).includes(pattern)) await appendFile(location, `${existing && !existing.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  if (!existing.split(/\r?\n/).includes(pattern)) {
+    beforeWrite();
+    await appendFile(location, `${existing && !existing.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  }
   return location;
 }

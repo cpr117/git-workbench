@@ -1,4 +1,5 @@
 import { t, getLocale } from './i18n';
+import { readModules, requireModule, ModuleName } from './modules';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -7,6 +8,11 @@ import { historySnapshot, offsetPatch, selectionDiff } from './historyDiff';
 import { HistorySurface, HistoryTheme, openHistoryPopup } from './historyPopup';
 
 let activePopup: HistorySurface | undefined;
+const surfaces = new Map<HistorySurface, ModuleName>();
+export function closeDisabledHistoryViews(): void {
+  const modules = readModules();
+  for (const [surface, module] of surfaces) if (!modules[module]) surface.dispose();
+}
 
 export interface HistoryItem extends Commit { patch?: string; file?: string; }
 
@@ -26,6 +32,8 @@ export async function openHistoryView(
   openCommit: (git: Git, hash: string) => Promise<void>,
   options: { presentation?: 'popup' | 'editor'; hashes?: string[] } = {},
 ): Promise<void> {
+  const module = range ? 'selectionHistory' : 'fileHistory';
+  requireModule(module);
   if (!entries.length) { void vscode.window.showInformationMessage(t("没有找到历史记录。")); return; }
   const title = range ? t("选区历史 · {0}:{1}–{2}", path.basename(file), range.start, range.end) : t("文件历史 · {0}", path.basename(file));
   const presentation = options.presentation ?? vscode.workspace.getConfiguration('gitWorkbench').get<string>('historyPresentation', 'popup');
@@ -46,10 +54,15 @@ export async function openHistoryView(
     editor.webview.html = `<!doctype html><html lang="${getLocale()}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${editor.webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${resource('history.css')}"><title>Git History</title></head><body><div id="app"></div><script nonce="${nonce}">window.gitWorkbenchLanguage=${JSON.stringify(getLocale())};</script><script nonce="${nonce}" src="${resource('i18n.js')}"></script><script nonce="${nonce}" src="${resource('selection.js')}"></script><script nonce="${nonce}" src="${resource('history.js')}"></script></body></html>`;
     panel = { popup: false, webview: editor.webview, onDidDispose: listener => editor.onDidDispose(listener), dispose: () => editor.dispose() };
   }
+  if (!readModules()[module]) { panel.dispose(); return; }
+  surfaces.set(panel, module);
+  panel.onDidDispose(() => surfaces.delete(panel));
   context.subscriptions.push(panel);
   let generation = 0, disposed = false, switching = false;
   const send = async (type: string, data: unknown) => { if (!disposed) await panel.webview.postMessage({ type, data }); };
-  const appearanceSubscriptions: vscode.Disposable[] = [];
+  const appearanceSubscriptions: vscode.Disposable[] = [vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('gitWorkbench.modules')) void send('modules', readModules());
+  })];
   if (panel.popup) {
     const update = () => { void send('appearance', popupAppearance()); };
     appearanceSubscriptions.push(vscode.window.onDidChangeActiveColorTheme(update), vscode.workspace.onDidChangeConfiguration(event => {
@@ -96,9 +109,10 @@ export async function openHistoryView(
     if (!message || typeof message !== 'object' || disposed) return;
     const msg = message as Record<string, unknown>;
     try {
+      requireModule(module);
       switch (msg.type) {
         case 'init':
-          await send('history', { file, root: git.root, range, presentation, entries: entries.map(({ patch: _patch, file: _file, ...commit }) => commit) });
+          await send('history', { file, root: git.root, range, presentation, modules: readModules(), entries: entries.map(({ patch: _patch, file: _file, ...commit }) => commit) });
           if (panel.popup) await send('appearance', popupAppearance());
           if (options.hashes?.length) { await showMany(options.hashes); options = { ...options, hashes: undefined }; break; }
           if (Array.isArray(msg.hashes) && msg.hashes.length > 1) { await showMany(msg.hashes); break; }
@@ -121,6 +135,7 @@ export async function openHistoryView(
           break;
         }
         case 'openCommit':
+          requireModule('graph');
           if (typeof msg.hash === 'string' && entries.some(entry => entry.hash === msg.hash)) { await openCommit(git, assertHash(msg.hash)); if (panel.popup) panel.dispose(); }
           break;
         case 'copy': if (typeof msg.hash === 'string' && entries.some(entry => entry.hash === msg.hash)) await vscode.env.clipboard.writeText(assertHash(msg.hash)); break;

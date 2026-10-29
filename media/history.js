@@ -24,9 +24,12 @@
       </section>
     </main><footer><span id="status" role="status">${t("读取历史…")}</span><span id="range"></span></footer>`;
 
-  function select(hash, modifiers = {}) {
+  function visibleEntries() {
     const query = $('search').value.trim().toLowerCase();
-    const order = state.entries.filter(entry => `${entry.hash} ${entry.author} ${entry.subject}`.toLowerCase().includes(query)).map(entry => entry.hash);
+    return state.entries.filter(entry => `${entry.hash} ${entry.author} ${entry.subject}`.toLowerCase().includes(query));
+  }
+  function select(hash, modifiers = {}) {
+    const order = visibleEntries().map(entry => entry.hash);
     const selection = GitSelection.choose(order, state.selectedHashes, state.anchor, hash, modifiers);
     state.selected = selection.hashes.includes(hash) ? hash : selection.hashes[0]; state.selectedHashes = selection.hashes; state.anchor = selection.anchor; state.change = -1;
     api.setState({ selected: state.selected, hashes: state.selectedHashes }); renderList();
@@ -34,11 +37,10 @@
     if (state.selectedHashes.length > 1) send('selectMany', { hashes: state.selectedHashes }); else send('select', { hash: state.selectedHashes[0] });
   }
   function renderList() {
-    const query = $('search').value.trim().toLowerCase();
     const list = $('list'), scroll = list.scrollTop;
     const focused = list.contains(document.activeElement) ? document.activeElement.dataset.hash : undefined;
     list.replaceChildren();
-    const visible = state.entries.filter(entry => `${entry.hash} ${entry.author} ${entry.subject}`.toLowerCase().includes(query));
+    const visible = visibleEntries();
     $('count').textContent = t("{0} / {1} · 已选 {2}", visible.length, state.entries.length, state.selectedHashes.length);
     visible.forEach(entry => {
       const item = make('button', `revision${state.selectedHashes.includes(entry.hash) ? ' selected' : ''}`); item.type = 'button'; item.dataset.hash = entry.hash; item.setAttribute('role', 'option'); item.setAttribute('aria-selected', String(state.selectedHashes.includes(entry.hash)));
@@ -54,8 +56,8 @@
     });
     list.scrollTop = scroll;
     if (focused) [...list.children].find(child => child.dataset.hash === focused)?.focus({ preventScroll: true });
-    const index = state.entries.findIndex(entry => entry.hash === state.selected);
-    $('newer').disabled = index <= 0; $('older').disabled = index < 0 || index >= state.entries.length - 1;
+    const index = visible.findIndex(entry => entry.hash === state.selected);
+    $('newer').disabled = index <= 0; $('older').disabled = index < 0 || index >= visible.length - 1;
   }
   function codeRow(row, side) {
     const cell = row[side];
@@ -95,8 +97,12 @@
   $('close').onclick = () => send('close');
   $('open-commit').onclick = () => { if (state.selected) send('openCommit', { hash: state.selected }); };
   $('hash').onclick = () => { if (state.selected) send('copy', { hash: state.selected }); };
-  $('newer').onclick = () => { const index = state.entries.findIndex(entry => entry.hash === state.selected); if (index > 0) select(state.entries[index - 1].hash); };
-  $('older').onclick = () => { const index = state.entries.findIndex(entry => entry.hash === state.selected); if (index >= 0 && index + 1 < state.entries.length) select(state.entries[index + 1].hash); };
+  function moveRevision(direction) {
+    const visible = visibleEntries(), index = visible.findIndex(entry => entry.hash === state.selected);
+    if (index >= 0 && visible[index + direction]) select(visible[index + direction].hash);
+  }
+  $('newer').onclick = () => moveRevision(-1);
+  $('older').onclick = () => moveRevision(1);
   $('changes-only').onchange = () => { state.changesOnly = $('changes-only').checked; state.change = -1; renderDiff(); };
   $('previous-change').onclick = () => jumpChange(-1); $('next-change').onclick = () => jumpChange(1);
   $('mode').onclick = () => { state.patch = !state.patch; $('patch').hidden = !state.patch; $('comparison-body').hidden = state.patch; $('mode').textContent = state.patch ? t("左右对比") : t("原始补丁"); };
@@ -106,7 +112,10 @@
       if (['light', 'dark', 'hc-light', 'hc-dark'].includes(data?.theme)) document.documentElement.dataset.theme = data.theme;
       if (typeof data?.fontFamily === 'string') document.documentElement.style.setProperty('--vscode-editor-font-family', data.fontFamily);
       if (Number.isFinite(data?.fontSize) && data.fontSize > 0) document.documentElement.style.setProperty('--vscode-editor-font-size', `${data.fontSize}px`);
+    } else if (type === 'modules') {
+      $('open-commit').hidden = data.graph === false;
     } else if (type === 'history') {
+      $('open-commit').hidden = data.modules?.graph === false;
       state.entries = data.entries; state.presentation = data.presentation;
       $('mapping').textContent = data.range?.notice || ''; $('mapping').hidden = !data.range?.notice;
       $('float').textContent = state.presentation === 'popup' ? t("在标签页中打开") : t("在弹窗中打开");

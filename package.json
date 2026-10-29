@@ -2,7 +2,7 @@
   "name": "git-workbench",
   "displayName": "Git Workbench",
   "description": "Commit graph, multi-commit comparison, selection history and grouped Git operations for VS Code, Cursor and Qoder.",
-  "version": "0.14.0",
+  "version": "0.14.5",
   "publisher": "local-tools",
   "repository": {
     "type": "git",
@@ -42,11 +42,12 @@
     "virtualWorkspaces": false
   },
   "scripts": {
-    "compile": "tsc -p .",
+    "compile": "npm run clean && tsc -p .",
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && node --test dist/test/*.test.js",
     "build:native": "node scripts/build-native.mjs",
-    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.14.0.vsix"
+    "package": "npm run compile && npm run build:native && vsce package --no-dependencies --allow-missing-repository -o ../git-workbench-0.14.5.vsix",
+    "clean": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\""
   },
   "contributes": {
     "viewsContainers": {
@@ -64,7 +65,8 @@
           "id": "gitWorkbench.log",
           "name": "Git Log",
           "type": "webview",
-          "contextualTitle": "Git Workbench"
+          "contextualTitle": "Git Workbench",
+          "when": "config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash"
         }
       ],
       "scm": [
@@ -74,7 +76,7 @@
           "contextualTitle": "%contributes.views.scm.0.contextualTitle%",
           "icon": "media/git.svg",
           "visibility": "collapsed",
-          "when": "gitWorkbench.comparisonActive"
+          "when": "gitWorkbench.comparisonActive && config.gitWorkbench.modules.comparison"
         }
       ]
     },
@@ -134,6 +136,77 @@
             "%contributes.configuration.properties.gitWorkbench.comparisonIconStyle.enumDescriptions.1%"
           ],
           "description": "%contributes.configuration.properties.gitWorkbench.comparisonIconStyle.description%"
+        },
+        "gitWorkbench.modules": {
+          "type": "object",
+          "scope": "window",
+          "order": 0,
+          "additionalProperties": false,
+          "default": {
+            "graph": true,
+            "selectionHistory": true,
+            "fileHistory": true,
+            "blame": true,
+            "comparison": true,
+            "stash": true,
+            "operations": true,
+            "explorerMenu": true,
+            "editorMenu": true,
+            "statusBar": true
+          },
+          "description": "%modules.description%",
+          "properties": {
+            "graph": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.graph.label%"
+            },
+            "selectionHistory": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.selectionHistory.label%"
+            },
+            "fileHistory": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.fileHistory.label%"
+            },
+            "blame": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.blame.label%"
+            },
+            "comparison": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.comparison.label%"
+            },
+            "stash": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.stash.label%"
+            },
+            "operations": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.operations.label%"
+            },
+            "explorerMenu": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.explorerMenu.label%"
+            },
+            "editorMenu": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.editorMenu.label%"
+            },
+            "statusBar": {
+              "type": "boolean",
+              "default": true,
+              "description": "%modules.statusBar.label%"
+            }
+          }
         }
       }
     },
@@ -147,213 +220,220 @@
         "command": "gitWorkbench.open",
         "title": "%contributes.commands.1.title%",
         "category": "Git Workbench",
-        "icon": "$(git-merge)"
+        "icon": "$(git-merge)",
+        "enablement": "(config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash)"
       },
       {
         "command": "gitWorkbench.selectionHistory",
         "title": "%contributes.commands.2.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.selectionHistory"
       },
       {
         "command": "gitWorkbench.fileHistory",
         "title": "%contributes.commands.3.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.fileHistory"
       },
       {
         "command": "gitWorkbench.blame",
         "title": "%contributes.commands.4.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.blame"
       },
       {
         "command": "gitWorkbench.toggleBlame",
         "title": "%contributes.commands.5.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.blame"
       },
       {
         "command": "gitWorkbench.operations",
         "title": "%contributes.commands.6.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.stageSelection",
         "title": "%contributes.commands.7.title%",
-        "category": "Git Workbench"
+        "category": "Git Workbench",
+        "enablement": "config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.commit",
         "title": "%contributes.commands.8.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.add",
         "title": "%contributes.commands.9.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.exclude",
         "title": "%contributes.commands.10.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.diff",
         "title": "%contributes.commands.11.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.compareRevision",
         "title": "%contributes.commands.12.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.compareBranch",
         "title": "%contributes.commands.13.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.explorer.history",
         "title": "%contributes.commands.14.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.graph"
       },
       {
         "command": "gitWorkbench.explorer.rollback",
         "title": "%contributes.commands.15.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.push",
         "title": "Push…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.pull",
         "title": "%contributes.commands.17.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.fetch",
         "title": "Fetch…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.merge",
         "title": "Merge…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.rebase",
         "title": "Rebase…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.branches",
         "title": "%contributes.commands.21.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.newBranch",
         "title": "%contributes.commands.22.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.newTag",
         "title": "%contributes.commands.23.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.reset",
         "title": "Reset HEAD…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.stash",
         "title": "%contributes.commands.25.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
       },
       {
         "command": "gitWorkbench.explorer.unstash",
         "title": "%contributes.commands.26.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
       },
       {
         "command": "gitWorkbench.explorer.remotes",
         "title": "%contributes.commands.27.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.explorer.clone",
         "title": "Clone…",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
       },
       {
         "command": "gitWorkbench.compare.refresh",
         "title": "%contributes.commands.29.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted",
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison",
         "icon": "$(refresh)"
       },
       {
         "command": "gitWorkbench.compare.search",
         "title": "%contributes.commands.30.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted",
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison",
         "icon": "$(search)"
       },
       {
         "command": "gitWorkbench.compare.select",
         "title": "%contributes.commands.31.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted"
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.viewTree",
         "title": "%contributes.commands.32.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != tree"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != tree && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.viewList",
         "title": "%contributes.commands.33.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != list"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonViewMode != list && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.name",
         "title": "%contributes.commands.34.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != name"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != name && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.path",
         "title": "%contributes.commands.35.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != path"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != path && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.sort.status",
         "title": "%contributes.commands.36.title%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != status"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonSortOrder != status && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.close",
@@ -365,13 +445,37 @@
         "command": "gitWorkbench.compare.icons.file",
         "title": "%comparison.icons.file%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != file"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != file && config.gitWorkbench.modules.comparison"
       },
       {
         "command": "gitWorkbench.compare.icons.status",
         "title": "%comparison.icons.status%",
         "category": "Git Workbench",
-        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != status"
+        "enablement": "isWorkspaceTrusted && gitWorkbench.comparisonIconStyle != status && config.gitWorkbench.modules.comparison"
+      },
+      {
+        "command": "gitWorkbench.explorer.file.commit",
+        "title": "%explorer.file.commit%",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+      },
+      {
+        "command": "gitWorkbench.explorer.file.rollback",
+        "title": "%explorer.file.rollback%",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+      },
+      {
+        "command": "gitWorkbench.explorer.file.stash",
+        "title": "%explorer.file.stash%",
+        "category": "Git Workbench",
+        "enablement": "isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
+      },
+      {
+        "command": "gitWorkbench.modules",
+        "title": "%modules.title%",
+        "category": "Git Workbench",
+        "icon": "$(settings-gear)"
       }
     ],
     "submenus": [
@@ -392,65 +496,119 @@
       "editor/context": [
         {
           "submenu": "gitWorkbench.editorMenu",
-          "when": "resourceScheme == file && isWorkspaceTrusted",
+          "when": "resourceScheme == file && isWorkspaceTrusted && config.gitWorkbench.modules.editorMenu && (config.gitWorkbench.modules.selectionHistory || config.gitWorkbench.modules.fileHistory || config.gitWorkbench.modules.blame || config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash || config.gitWorkbench.modules.operations)",
           "group": "gitWorkbench"
         }
       ],
       "explorer/context": [
         {
           "submenu": "gitWorkbench.explorerMenu",
-          "when": "resourceScheme == file && !explorerResourceIsFolder && isWorkspaceTrusted",
+          "when": "resourceScheme == file && !explorerResourceIsFolder && isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu",
           "group": "gitWorkbench"
         },
         {
           "submenu": "gitWorkbench.directoryMenu",
-          "when": "resourceScheme == file && explorerResourceIsFolder && isWorkspaceTrusted",
+          "when": "resourceScheme == file && explorerResourceIsFolder && isWorkspaceTrusted && config.gitWorkbench.modules.explorerMenu",
           "group": "gitWorkbench"
         }
       ],
       "gitWorkbench.editorMenu": [
         {
           "command": "gitWorkbench.selectionHistory",
-          "group": "1_history@1"
+          "group": "1_history@1",
+          "when": "config.gitWorkbench.modules.selectionHistory"
         },
         {
           "command": "gitWorkbench.fileHistory",
-          "group": "1_history@2"
+          "group": "1_history@2",
+          "when": "config.gitWorkbench.modules.fileHistory"
         },
         {
           "command": "gitWorkbench.blame",
-          "group": "1_history@3"
+          "group": "1_history@3",
+          "when": "config.gitWorkbench.modules.blame"
         },
         {
           "command": "gitWorkbench.toggleBlame",
-          "group": "1_history@4"
+          "group": "1_history@4",
+          "when": "config.gitWorkbench.modules.blame"
         },
         {
           "command": "gitWorkbench.stageSelection",
-          "when": "editorHasSelection",
+          "when": "editorHasSelection && config.gitWorkbench.modules.operations",
           "group": "2_commit"
         },
         {
           "command": "gitWorkbench.open",
-          "group": "3_repository@1"
+          "group": "3_repository@1",
+          "when": "(config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash)"
         },
         {
           "command": "gitWorkbench.operations",
-          "group": "3_repository@2"
+          "group": "3_repository@2",
+          "when": "config.gitWorkbench.modules.operations"
         }
       ],
       "gitWorkbench.explorerMenu": [
         {
+          "command": "gitWorkbench.explorer.file.commit",
+          "group": "1_commit@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+        },
+        {
+          "command": "gitWorkbench.explorer.add",
+          "group": "1_commit@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+        },
+        {
+          "command": "gitWorkbench.explorer.exclude",
+          "group": "1_commit@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+        },
+        {
+          "command": "gitWorkbench.explorer.diff",
+          "group": "2_history@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareRevision",
+          "group": "2_history@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
+        },
+        {
+          "command": "gitWorkbench.explorer.compareBranch",
+          "group": "2_history@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
+        },
+        {
           "command": "gitWorkbench.fileHistory",
-          "group": "1_history"
+          "group": "2_history@4",
+          "when": "config.gitWorkbench.modules.fileHistory"
+        },
+        {
+          "command": "gitWorkbench.explorer.file.rollback",
+          "group": "2_history@5",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
+        },
+        {
+          "command": "gitWorkbench.explorer.file.stash",
+          "group": "3_stash@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
+        },
+        {
+          "command": "gitWorkbench.explorer.unstash",
+          "group": "3_stash@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
         },
         {
           "command": "gitWorkbench.open",
-          "group": "2_repository@1"
+          "group": "4_repository@1",
+          "when": "(config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash)"
         },
         {
           "command": "gitWorkbench.operations",
-          "group": "2_repository@2"
+          "group": "4_repository@2",
+          "when": "config.gitWorkbench.modules.operations"
         }
       ],
       "commandPalette": [
@@ -613,150 +771,193 @@
         {
           "command": "gitWorkbench.compare.icons.status",
           "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.file.commit",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.file.rollback",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.explorer.file.stash",
+          "when": "false"
+        },
+        {
+          "command": "gitWorkbench.modules",
+          "when": "false"
         }
       ],
       "scm/title": [
         {
           "command": "gitWorkbench.open",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "(config.gitWorkbench.modules.graph || config.gitWorkbench.modules.stash)"
         }
       ],
       "gitWorkbench.directoryMenu": [
         {
           "command": "gitWorkbench.explorer.commit",
-          "group": "1_commit@1"
+          "group": "1_commit@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.add",
-          "group": "1_commit@2"
+          "group": "1_commit@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.exclude",
-          "group": "1_commit@3"
+          "group": "1_commit@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.diff",
-          "group": "2_history@1"
+          "group": "2_history@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
         },
         {
           "command": "gitWorkbench.explorer.compareRevision",
-          "group": "2_history@2"
+          "group": "2_history@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
         },
         {
           "command": "gitWorkbench.explorer.compareBranch",
-          "group": "2_history@3"
+          "group": "2_history@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.comparison"
         },
         {
           "command": "gitWorkbench.explorer.history",
-          "group": "2_history@4"
+          "group": "2_history@4",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.graph"
         },
         {
           "command": "gitWorkbench.explorer.rollback",
-          "group": "2_history@5"
+          "group": "2_history@5",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.push",
-          "group": "3_sync@1"
+          "group": "3_sync@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.pull",
-          "group": "3_sync@2"
+          "group": "3_sync@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.fetch",
-          "group": "3_sync@3"
+          "group": "3_sync@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.merge",
-          "group": "4_integrate@1"
+          "group": "4_integrate@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.rebase",
-          "group": "4_integrate@2"
+          "group": "4_integrate@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.branches",
-          "group": "5_refs@1"
+          "group": "5_refs@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.newBranch",
-          "group": "5_refs@2"
+          "group": "5_refs@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.newTag",
-          "group": "5_refs@3"
+          "group": "5_refs@3",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.reset",
-          "group": "5_refs@4"
+          "group": "5_refs@4",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.stash",
-          "group": "6_stash@1"
+          "group": "6_stash@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
         },
         {
           "command": "gitWorkbench.explorer.unstash",
-          "group": "6_stash@2"
+          "group": "6_stash@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations && config.gitWorkbench.modules.stash"
         },
         {
           "command": "gitWorkbench.explorer.remotes",
-          "group": "7_tools@1"
+          "group": "7_tools@1",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         },
         {
           "command": "gitWorkbench.explorer.clone",
-          "group": "7_tools@2"
+          "group": "7_tools@2",
+          "when": "config.gitWorkbench.modules.explorerMenu && config.gitWorkbench.modules.operations"
         }
       ],
       "view/title": [
         {
           "command": "gitWorkbench.compare.search",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "navigation@1"
         },
         {
           "command": "gitWorkbench.compare.refresh",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "navigation@2"
         },
         {
           "command": "gitWorkbench.compare.viewTree",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "1_view@1"
         },
         {
           "command": "gitWorkbench.compare.viewList",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "1_view@2"
         },
         {
           "command": "gitWorkbench.compare.sort.name",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "2_sort@1"
         },
         {
           "command": "gitWorkbench.compare.sort.path",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "2_sort@2"
         },
         {
           "command": "gitWorkbench.compare.sort.status",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "2_sort@3"
         },
         {
           "command": "gitWorkbench.compare.icons.file",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "2_icons@1"
         },
         {
           "command": "gitWorkbench.compare.icons.status",
-          "when": "view == gitWorkbench.compareFiles",
+          "when": "view == gitWorkbench.compareFiles && config.gitWorkbench.modules.comparison",
           "group": "2_icons@2"
         },
         {
           "command": "gitWorkbench.compare.close",
           "when": "view == gitWorkbench.compareFiles",
           "group": "3_comparison@1"
+        },
+        {
+          "command": "gitWorkbench.modules",
+          "when": "view == gitWorkbench.log",
+          "group": "navigation@9"
         }
       ]
     },

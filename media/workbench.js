@@ -6,6 +6,8 @@
   const t = GitWorkbenchI18n.createTranslator(language);
   const vscode = acquireVsCodeApi();
   const saved = vscode.getState() || {};
+  let modules = { graph: true, stash: true, selectionHistory: true, fileHistory: true, blame: true, editorMenu: true, statusBar: true, comparison: true, explorerMenu: true, operations: true, ...window.gitWorkbenchModules };
+  const availableTabs = () => ['history', 'stash'].filter(tab => modules[tab === 'history' ? 'graph' : 'stash']);
   const state = { snapshot: null, detail: null, selected: saved.selected, compared: saved.hashes || [], anchor: saved.selected, tab: ['history', 'stash'].includes(saved.tab) ? saved.tab : 'history', loading: false, operating: false, collapsed: new Set(saved.collapsed || []), panes: saved.panes || {}, stashSelected: saved.stashSelected, stashRoot: saved.stashRoot, stashDetail: null, stashFile: null, stashPendingDiff: null, stashCollapsed: new Set() };
   const palette = ['#7c9cff', '#61c6a7', '#d49bed', '#e6b86a', '#77c4dd', '#e58c9c', '#a9c77a'];
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -27,7 +29,7 @@
       <strong class="git-label">Git</strong>
       <nav class="tabs" aria-label="${t("Git 视图")}"><button id="history-tab" role="tab">Log: ${t("全部分支")}</button><button id="stash-tab" role="tab">Stash <span id="stash-count">0</span></button></nav>
       <button id="open-changes" title="${t("打开源代码管理中的更改")}">${t("更改")} ↗</button><button id="repo" class="repo" title="${t("切换仓库")}">${t("选择仓库")}</button><span id="branch-state"></span>
-      <div class="top-actions"><span id="busy" role="status"></span><button id="continue" hidden>${t("继续操作")}</button><button id="abort" hidden>${t("中止")}</button><button id="refresh" title="${t("刷新")}">↻</button><button id="operations" title="${t("仓库 Git 操作")}">${t("仓库 Git 操作 ▾")}</button></div>
+      <div class="top-actions"><button id="modules" title="${t("功能开关")}">⚙</button><span id="busy" role="status"></span><button id="continue" hidden>${t("继续操作")}</button><button id="abort" hidden>${t("中止")}</button><button id="refresh" title="${t("刷新")}">↻</button><button id="operations" title="${t("仓库 Git 操作")}">${t("仓库 Git 操作 ▾")}</button></div>
     </header>
     <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss" aria-label="${t("关闭提示")}">×</button></div>
     <main id="history-view" class="history-layout">
@@ -54,13 +56,16 @@
       <section class="stash-list-pane"><div class="stash-toolbar"><strong>Stash</strong><button id="stash-create">${t("新建 Stash…")}</button></div><div id="stash-list" role="listbox" aria-label="${t("Stash 列表")}"></div></section>
       <section class="stash-files-pane"><div class="stash-toolbar"><strong id="stash-heading">${t("选择 Stash 查看文件")}</strong><div id="stash-actions"></div></div><div id="stash-info"></div><div class="stash-toolbar"><input id="stash-search" type="search" placeholder="${t("筛选文件路径")}" aria-label="${t("筛选文件路径")}"><button id="stash-expand">${t("全部展开")}</button><button id="stash-collapse">${t("全部折叠")}</button></div><div id="stash-files"></div></section>
     </main>
+    <main id="modules-empty" hidden><p>${t("提交树和 Stash 均已停用，请在 Git Workbench → 功能开关中启用。")}</p></main>
     <footer class="footer"><span id="root-path">${t("本地 Git · 数据不上传")}</span><span id="footer-hint">Shift ${t("多选 · 右键提交操作")}</span></footer>
     <div id="context-menu" class="context-menu" role="menu" hidden></div>`;
 
   function setTab(tab) {
+    if (!availableTabs().includes(tab)) tab = availableTabs()[0];
+    $('modules-empty').hidden = Boolean(tab);
     state.tab = tab; persist();
     const hints = { history: 'Shift ' + t('多选 · 右键提交操作'), stash: t('选择 Stash 查看文件') };
-    $('footer-hint').textContent = hints[tab];
+    $('footer-hint').textContent = hints[tab] || '';
     $('context-menu').hidden = true;
     $('history-view').hidden = tab !== 'history';
     $('history-tab').setAttribute('aria-selected', String(tab === 'history'));
@@ -72,12 +77,14 @@
     }
     for (const name of ['history', 'stash']) $(name + '-tab').tabIndex = name === tab ? 0 : -1;
   }
+  $('modules').onclick = () => send('modules');
   $('history-tab').onclick = () => setTab('history');
   $('open-changes').onclick = () => send('scm');
   $('stash-tab').onclick = () => setTab('stash');
   document.querySelector('.tabs').setAttribute('role', 'tablist');
   document.querySelector('.tabs').onkeydown = event => {
-    const names = ['history', 'stash'];
+    const names = availableTabs();
+    if (!names.length) return;
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     let index = names.indexOf(state.tab);
@@ -218,7 +225,7 @@
     if (data.commit) {
       body.append(make('p', 'meta', `${data.commit.author} · ${data.commit.date.slice(0, 16).replace('T', ' ')}`));
       body.append(button(data.target, () => send('copy', { hash: data.target }), 'full-hash'));
-      const toolbar = make('div', 'detail-toolbar'); toolbar.append(button(t("操作此提交 ▾"), () => send('menu', { hash: data.target }))); body.append(toolbar);
+      const toolbar = make('div', 'detail-toolbar'); if (modules.operations) toolbar.append(button(t("操作此提交 ▾"), () => send('menu', { hash: data.target }))); body.append(toolbar);
       if (data.commit.parents.length > 1) {
         const label = make('label', 'parent-label', t("比较父提交 ")); const select = make('select');
         data.commit.parents.forEach((parent, index) => { const option = make('option', '', `${index + 1} · ${shorten(parent)}`); option.value = parent; option.selected = parent === data.base; select.append(option); });
@@ -235,7 +242,7 @@
       diff.append(make('span', `file-status status-${file.status[0]}`, file.status[0]), make('span', 'file-path', file.commitHash ? `${shorten(file.commitHash)} · ${file.path}` : file.path));
       diff.title = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
       entry.append(diff);
-      if (!data.aggregate) { const restore = button('↶', () => send('restore', { path: file.path }), 'restore-file'); restore.title = t("恢复工作区文件为此版本"); entry.append(restore); }
+      if (!data.aggregate && modules.operations) { const restore = button('↶', () => send('restore', { path: file.path }), 'restore-file'); restore.title = t("恢复工作区文件为此版本"); entry.append(restore); }
       files.append(entry);
     }); panel.append(body);
   }
@@ -258,7 +265,7 @@
   }
   function stashMenu(event, entry, file) {
     const menu = $('context-menu'); menu.replaceChildren();
-    const actions = file ? [] : [[t('恢复并删除 Stash'), 'pop'], [t('应用 Stash'), 'apply'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']];
+    const actions = file || !modules.operations ? [] : [[t('恢复并删除 Stash'), 'pop'], [t('应用 Stash'), 'apply'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']];
     for (const [label, action] of actions) {
       const item = button(label, () => { menu.hidden = true; stashMessage('stashAction', entry, { action }); });
       item.disabled = state.operating; item.setAttribute('role', 'menuitem');
@@ -305,7 +312,7 @@
     $('stash-info').textContent = detail ? detail.stash.subject : '';
     $('stash-info').title = detail?.stash.subject || '';
     if (!detail) { container.append(make('p', 'empty-list', state.stashSelected ? t('加载中…') : t('选择 Stash 查看文件'))); return; }
-    for (const [label, action] of [[t('应用 Stash'), 'apply'], [t('恢复并删除 Stash'), 'pop'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']]) {
+    for (const [label, action] of (modules.operations ? [[t('应用 Stash'), 'apply'], [t('恢复并删除 Stash'), 'pop'], ['Unstash…', 'unstash'], [t('删除 Stash'), 'drop']] : [])) {
       const item = button(label, () => stashMessage('stashAction', detail.stash, { action }));
       item.disabled = state.operating; actions.append(item);
     }
@@ -340,7 +347,7 @@
       [t("复制提交 ID"), null], [t("从此提交创建分支"), 'branchCreate'], [t("创建标签"), 'tagCreate'], [t("检出此提交"), 'checkout'],
       ['Cherry-pick', 'cherryPick'], ['Revert', 'revert'], [t("合并到当前分支"), 'merge'], [t("当前分支变基到这里"), 'rebase'], [t("Reset 到这里…"), 'reset']
     ];
-    items.forEach(([label, action]) => {
+    items.filter(([, action]) => !action || modules.operations).forEach(([label, action]) => {
       const item = button(label, () => { menu.hidden = true; if (action) send('action', { action, hash }); else send('copy', { hash }); });
       item.setAttribute('role', 'menuitem'); if (action === 'reset') item.classList.add('danger-text'); menu.append(item);
     });
@@ -348,15 +355,18 @@
   }
   function branchMenu(event, ref) {
     const menu = $('context-menu'); menu.replaceChildren();
-    GitLogModel.branchMenu(ref, state.snapshot.state.branch, window.gitWorkbenchLanguage || 'zh-cn').forEach(spec => {
-      if (spec.separator) { const line = make('hr'); line.setAttribute('role', 'separator'); menu.append(line); return; }
+    let separator = false;
+    GitLogModel.branchMenu(ref, state.snapshot.state.branch, window.gitWorkbenchLanguage || 'zh-cn').filter(spec => spec.separator || (['compare', 'workingDiff'].includes(spec.action) ? modules.comparison : modules.operations)).forEach(spec => {
+      if (spec.separator) { separator = true; return; }
+      if (separator && menu.children.length) { const line = make('hr'); line.setAttribute('role', 'separator'); menu.append(line); }
+      separator = false;
       const item = button(spec.label, () => { menu.hidden = true; send('branchAction', { action: spec.action, ref: ref.full }); });
       item.disabled = Boolean(spec.disabled || state.operating);
       item.setAttribute('role', 'menuitem');
       if (spec.action === 'delete') item.classList.add('danger-text');
       menu.append(item);
     });
-    positionMenu(event);
+    if (menu.children.length) positionMenu(event);
   }
   function positionMenu(event) {
     const menu = $('context-menu'); menu.hidden = false;
@@ -384,10 +394,21 @@
     renderStashes(); renderStashFiles(); persist();
     if (state.stashSelected && state.tab === 'stash') stashMessage('stashSelect', state.stashSelected);
   }
+  function applyModules(data) {
+    modules = { ...modules, ...data };
+    $('history-tab').hidden = !modules.graph; $('stash-tab').hidden = !modules.stash;
+    for (const id of ['operations', 'new-branch', 'stash-create']) $(id).hidden = !modules.operations;
+    $('continue').hidden = $('abort').hidden = !modules.operations || !state.snapshot?.state.operation;
+    if (!modules.graph) { state.detail = null; state.selected = undefined; state.compared = []; clearDetail(); }
+    if (!modules.stash) { state.stashDetail = null; state.stashSelected = undefined; state.stashPendingDiff = null; }
+    if (state.detail) renderDetail(state.detail);
+    renderStashFiles(); setTab(state.tab);
+  }
   function busy() { $('busy').textContent = state.operating ? t("Git 操作中…") : state.loading ? t("加载中…") : ''; $('app').classList.toggle('operating', state.operating); }
   window.addEventListener('message', event => {
     const { type, data } = event.data || {};
-    if (type === 'reset') {
+    if (type === 'modules') { applyModules(data); }
+    else if (type === 'reset') {
       $('context-menu').hidden = true;
       state.snapshot = null; state.detail = null; state.selected = undefined; state.compared = []; state.stashSelected = undefined; state.stashDetail = null; state.stashPendingDiff = null; state.stashCollapsed.clear(); renderStashes(); renderStashFiles(); persist();
       $('commits').replaceChildren(); $('refs').replaceChildren(); clearDetail();
@@ -398,7 +419,7 @@
       $('history-tab').textContent = 'Log: ' + (data.filters.ref ? data.filters.ref.replace(/^refs\/(heads|remotes|tags)\//, '') : t("全部分支"));
       $('filter-toggle').classList.toggle('filter-active', Boolean(data.filters.author || data.filters.path || data.filters.since || data.filters.until));
       $('root-path').textContent = data.root; $('branch-state').textContent = `${data.state.branch}${data.state.operation ? ' · ' + data.state.operation + t(" 进行中") : ''}`;
-      $('continue').hidden = $('abort').hidden = !data.state.operation;
+      $('continue').hidden = $('abort').hidden = !modules.operations || !data.state.operation;
       for (const key of ['search', 'author', 'path', 'since', 'until']) $(key).value = data.filters[key] || '';
       state.compared = state.compared.filter(hash => data.commits.some(commit => commit.hash === hash));
       if (state.selected && !data.commits.some(commit => commit.hash === state.selected)) state.selected = undefined;
@@ -450,5 +471,5 @@
       state.panes[key] = Math.max(key === 'top' ? 20 : key === 'left' ? 12 : 18, Math.min(key === 'top' ? 80 : 38, value)); applyPanes(); persist();
     };
   }
-  applyPanes(); setTab(state.tab); send('init');
+  applyPanes(); applyModules(modules); send('init');
 })();
