@@ -985,10 +985,8 @@
   "icon": "media/icon.png",
   "overrides": {
     "@vscode/vsce": {
-      "@azure/identity": "4.13.0",
-      "@azure/msal-node@3.8.10": {
-        "uuid": "11.1.1"
-      }
-    }
+      "@azure/identity": "4.13.0"
+    },
+    "uuid": "11.1.1"
   }
 }

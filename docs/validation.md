@@ -9,7 +9,7 @@
 - macOS 小窗 arm64 / x86_64 构建与 ad-hoc 签名校验通过；未完成 Apple 公证。已确认 Marketplace 发布者 `PRCooper` 存在且当前账号拥有 Owner 权限；本轮未上传 Marketplace 或部署指南。
 - VSIX 排除 guide、源码、测试及用户 `.vscode`；原有 `gitWorkbench.*` 设置与命令标识保留。旧版 `local-tools.git-workbench` 与新标识会被宿主视为两个扩展，体验新包前应卸载旧版。
 - 审查覆盖 OCR 工作区预览中的全部 20 个可审查文件，另检查测试、原生清单及文档。清理指南中的组织项目链接；公开文本扫描未发现无关组织信息、内网地址、本机用户路径或常见凭据格式。Git 历史与用户本地设置未纳入此次扫描。
-- 构建工具认证依赖限定在 `@vscode/vsce` 的依赖树内，完整 `npm audit` 为零已知漏洞。保留的 Azure Identity 4.13.0 低于新版 vsce 声明范围，属于临时覆盖；已验证 OIDC 独立认证路径和工具打包，未验证 Azure 凭据登录。MSAL 的公开 UUID 生成与客户端初始化烟测通过。开发依赖不随 VSIX 分发。
+- 构建工具认证依赖通过 `overrides` 固定，完整 `npm audit` 为零已知漏洞；npm 10 的全新安装验证通过。Azure Identity 限定在 vsce 依赖树内，UUID 固定当前开发工具链使用的 11.1.1，更新或新增依赖时需重新复核。保留的 Azure Identity 4.13.0 低于新版 vsce 声明范围，属于临时覆盖；已验证 OIDC 独立认证路径和工具打包，未验证 Azure 凭据登录。MSAL 的公开 UUID 生成与客户端初始化烟测通过。开发依赖不随 VSIX 分发。
 - 新增手动触发的 `publish.yml`：默认只编译、测试、审计与生成安装包，发布选项默认关闭。工作流通过 actionlint 和独立只读审查；vsce 4.1.0 的 OIDC 帮助入口及本地缺少 GitHub Actions 环境时拒绝发布的检查通过，不代表已完成云端令牌交换。
 
 ## 0.14.5 验证范围
