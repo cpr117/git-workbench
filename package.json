@@ -6,11 +6,11 @@
   "publisher": "PRCooper",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cpr117/git-workbench.git"
+    "url": "https://github.com/cpr117/orbit-git.git"
   },
-  "homepage": "https://github.com/cpr117/git-workbench",
+  "homepage": "https://github.com/cpr117/orbit-git",
   "bugs": {
-    "url": "https://github.com/cpr117/git-workbench/issues"
+    "url": "https://github.com/cpr117/orbit-git/issues"
   },
   "license": "MIT",
   "engines": {

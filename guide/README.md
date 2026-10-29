@@ -1,6 +1,6 @@
 # Orbit Git 使用指南网站
 
-插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。安装包、插件源码和校验文件均从 [cpr117/git-workbench](https://github.com/cpr117/git-workbench/releases/latest) 下载。
+插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。安装包、插件源码和校验文件均从 [cpr117/orbit-git](https://github.com/cpr117/orbit-git/releases/latest) 下载。
 
 ## 开发与预览
 

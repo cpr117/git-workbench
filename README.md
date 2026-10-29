@@ -2,13 +2,13 @@
 
 为 VS Code、Cursor 和 Qoder 提供接近 GoLand 的 Git 工作流：**分支 → 提交 → 文件 → Diff**。
 
-[下载插件与源码](https://github.com/cpr117/git-workbench/releases/latest) · [问题反馈](https://github.com/cpr117/git-workbench/issues) · [MIT License](LICENSE)
+[下载插件与源码](https://github.com/cpr117/orbit-git/releases/latest) · [问题反馈](https://github.com/cpr117/orbit-git/issues) · [MIT License](LICENSE)
 
 ## 安装与打开
 
 需要桌面版 VS Code 1.95+ 或兼容编辑器、本地 Git 2.28+，以及受信任的 Git 工作区。
 
-1. 在 [Releases](https://github.com/cpr117/git-workbench/releases/latest) 下载 `.vsix`。
+1. 在 [Releases](https://github.com/cpr117/orbit-git/releases/latest) 下载 `.vsix`。
 2. 在扩展面板的 `…` 中选择 **从 VSIX 安装**，安装后重新加载编辑器。
 3. 打开 Git 项目，点击状态栏 **Orbit Git**，或运行命令 **Orbit Git: 打开功能菜单**。
 
@@ -22,7 +22,7 @@ macOS 12+ 本地工作区默认使用原生小窗；Windows、Linux 和远程工
 
 ## 扩展标识与菜单名称
 
-插件显示名为 **Orbit Git**，Marketplace 发布者标识为 `PRCooper`，扩展 ID 为 `PRCooper.orbit-git`。GitHub 源码仓库仍为 `cpr117/git-workbench`，两个身份不需要同名。右键菜单、命令分类和状态栏统一显示 **Orbit Git**，原有 `gitWorkbench.*` 设置继续使用。
+插件显示名为 **Orbit Git**，Marketplace 发布者标识为 `PRCooper`，扩展 ID 为 `PRCooper.orbit-git`。GitHub 源码仓库为 `cpr117/orbit-git`，两个身份不需要同名。右键菜单、命令分类和状态栏统一显示 **Orbit Git**，原有 `gitWorkbench.*` 设置继续使用。
 
 从旧版 `local-tools.git-workbench` 或本地预览版 `cpr117.orbit-git` 切换时，请先卸载旧扩展再安装新版本，避免出现重复菜单。
 
@@ -92,8 +92,8 @@ macOS 12+ 本地工作区默认使用原生小窗；Windows、Linux 和远程工
 构建工具的认证依赖通过 `overrides` 临时固定为已检查的版本，发布使用独立的 OIDC 路径。该覆盖低于新版打包工具声明的 Azure Identity 范围；更新依赖或使用 Azure 凭据登录前，应重新检查兼容性与 `npm audit`。这些开发依赖不包含在 VSIX 中。
 
 ```sh
-git clone https://github.com/cpr117/git-workbench.git
-cd git-workbench
+git clone https://github.com/cpr117/orbit-git.git
+cd orbit-git
 npm ci
 npm run compile
 npm test
@@ -104,7 +104,7 @@ npm run package # 包含 macOS 原生组件构建，在 macOS 执行
 
 在个人仓库的 **Actions → Package and publish Orbit Git → Run workflow** 中选择 `main`。默认只验证并生成 VSIX 与 SHA256 校验值，产物保留 14 天；勾选 `publish` 才上传 Marketplace，`pre_release` 默认开启。发布使用同次构建并校验后的安装包，不会再次打包。
 
-Marketplace 的 `PRCooper` 发布者需将 Trusted Publishing 绑定到 `cpr117/git-workbench` 的 `publish.yml`，Environment 留空。仅发布任务拥有 OIDC 临时令牌权限，不需要保存 PAT。正式版与已上架的预发布版必须使用不同版本号。
+Marketplace 的 `PRCooper` 发布者需将 Trusted Publishing 绑定到 `cpr117/orbit-git` 的 `publish.yml`，Environment 留空。仅发布任务拥有 OIDC 临时令牌权限，不需要保存 PAT。正式版与已上架的预发布版必须使用不同版本号。
 
 通过编辑器的 Extension Development Host 加载本项目进行调试。源码 ZIP 包含实现、测试和构建脚本；发行附件提供 VSIX、源码及 SHA256SUMS。
 
