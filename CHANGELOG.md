@@ -5,7 +5,7 @@
 - Publish verified build artifacts by ID so full workflow reruns and failed-publish reruns use the correct package.
 
 - Rename the extension to Orbit Git with Marketplace publisher ID `PRCooper` and extension ID `PRCooper.orbit-git`; keep the GitHub repository owner unchanged.
-- Add an original PNG extension icon. Menus, command categories and status-bar entries use the same name; `gitWorkbench.*` settings remain compatible.
+- Add an original PNG extension icon, losslessly compressed below Marketplace's 1024 KB limit. Menus, command categories and status-bar entries use the same name; `gitWorkbench.*` settings remain compatible.
 - Open history in editor tabs automatically on Windows, Linux and remote workspaces; local macOS continues to prefer native popups.
 - Fall back to a tab when the initial popup cannot start. Failed manual popup switches keep the existing tab and selected revisions.
 - Hide the popup switch on unsupported hosts and compile before packaging.

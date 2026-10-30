@@ -34,13 +34,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Validate extension identity and version
+      - name: Validate extension identity, version and icon
         run: |
           node <<'JS'
           const pkg = require('./package.json');
           if (pkg.name !== 'orbit-git' || pkg.publisher !== 'PRCooper'
             || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(pkg.version)) {
             throw new Error('Unexpected extension identity or version');
+          }
+          if (require('node:fs').statSync(pkg.icon).size > 1024 * 1024) {
+            throw new Error('Marketplace extension icon must not exceed 1024 KB');
           }
           JS
       - run: npm ci
