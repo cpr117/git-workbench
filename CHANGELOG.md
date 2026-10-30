@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.15.0 — Marketplace preparation
+## 0.15.0 — Orbit Git Preview
+
+- Publish verified build artifacts by ID so full workflow reruns and failed-publish reruns use the correct package.
 
 - Rename the extension to Orbit Git with Marketplace publisher ID `PRCooper` and extension ID `PRCooper.orbit-git`; keep the GitHub repository owner unchanged.
 - Add an original PNG extension icon. Menus, command categories and status-bar entries use the same name; `gitWorkbench.*` settings remain compatible.

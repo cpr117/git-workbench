@@ -1,6 +1,6 @@
 # Orbit Git 使用指南网站
 
-插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。安装包、插件源码和校验文件均从 [cpr117/orbit-git](https://github.com/cpr117/orbit-git/releases/latest) 下载。
+插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。本指南以 **Orbit Git 0.15.0 预发布版**（`PRCooper.orbit-git`）为准。安装包、源码和校验文件均从 [组织仓库 v0.15.0](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) 获取；下载链接固定到对应 tag，避免预发布版与旧稳定版混淆。
 
 ## 开发与预览
 
@@ -29,7 +29,7 @@ python3 guide/tools/preview.py
 
 `guide/` 纳入项目 Git；生成的 `site/` 不提交。根目录 `.vscodeignore` 排除 `guide/**`，因此插件 VSIX 不包含本网站。公开源码可从项目 Git 提交或标签生成，避免上传本地依赖和构建缓存。
 
-更新插件版本时，同步修改 `web/index.html` 中的版本、下载链接与 `web/app.js` 中的安装命令，先确认项目仓库的对应 Release 附件已发布。
+更新插件版本时，同步修改 `web/index.html` 中的版本、下载入口与 `web/app.js` 中的安装命令。固定版本附件应使用对应 tag 的下载地址；未提供该版本附件时只链接发行页面，不构造尚不存在的 VSIX 下载地址。
 
 ## 演示加载回归
 

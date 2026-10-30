@@ -2,15 +2,19 @@
 
 为 VS Code、Cursor 和 Qoder 提供接近 GoLand 的 Git 工作流：**分支 → 提交 → 文件 → Diff**。
 
-[下载插件与源码](https://github.com/cpr117/orbit-git/releases/latest) · [问题反馈](https://github.com/cpr117/orbit-git/issues) · [MIT License](LICENSE)
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PRCooper.orbit-git) · [预览版与源码下载](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) · [问题反馈](https://github.com/cpr117/orbit-git/issues) · [MIT License](LICENSE)
 
 ## 安装与打开
 
 需要桌面版 VS Code 1.95+ 或兼容编辑器、本地 Git 2.28+，以及受信任的 Git 工作区。
 
-1. 在 [Releases](https://github.com/cpr117/orbit-git/releases/latest) 下载 `.vsix`。
-2. 在扩展面板的 `…` 中选择 **从 VSIX 安装**，安装后重新加载编辑器。
+当前版本为 **Orbit Git 0.15.0 预发布版**，扩展 ID 为 `PRCooper.orbit-git`。VS Code 可从 Marketplace 安装并选择预发布版本；Cursor、Qoder 或离线安装使用以下 VSIX 步骤。
+
+1. 下载组织仓库的 [orbit-git-0.15.0.vsix](https://github.com/qimaotech/orbit-git/releases/download/v0.15.0/orbit-git-0.15.0.vsix)。[源码与 SHA256 校验文件](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0)位于同一发行版本。
+2. 在扩展面板的 `…` 中选择 **从 VSIX 安装**。安装后确认显示名为 **Orbit Git**、发布者为 `PRCooper`，再重新加载编辑器。
 3. 打开 Git 项目，点击状态栏 **Orbit Git**，或运行命令 **Orbit Git: 打开功能菜单**。
+
+命令行安装示例：`code --install-extension ./orbit-git-0.15.0.vsix`。预览包文件名可能带额外后缀，请替换为实际文件名。
 
 打开提交图的快捷键：macOS `Cmd+Alt+G`，Windows / Linux `Ctrl+Alt+G`。
 
@@ -102,7 +106,7 @@ npm run package # 包含 macOS 原生组件构建，在 macOS 执行
 
 ### GitHub Actions 发布
 
-在个人仓库的 **Actions → Package and publish Orbit Git → Run workflow** 中选择 `main`。默认只验证并生成 VSIX 与 SHA256 校验值，产物保留 14 天；勾选 `publish` 才上传 Marketplace，`pre_release` 默认开启。发布使用同次构建并校验后的安装包，不会再次打包。
+在个人仓库的 **Actions → Package and publish Orbit Git → Run workflow** 中选择 `main`。默认只验证并生成 VSIX 与 SHA256 校验值，产物保留 14 天；勾选 `publish` 才上传 Marketplace，`pre_release` 默认开启。发布使用同次构建并校验后的安装包，不会再次打包。每次构建的制品名称包含重跑次数，发布任务通过构建输出的制品 ID 下载：全量重跑使用新包，仅重跑失败的发布任务沿用之前成功构建的包。
 
 Marketplace 的 `PRCooper` 发布者需将 Trusted Publishing 绑定到 `cpr117/orbit-git` 的 `publish.yml`，Environment 留空。仅发布任务拥有 OIDC 临时令牌权限，不需要保存 PAT。正式版与已上架的预发布版必须使用不同版本号。
 

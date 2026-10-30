@@ -24,6 +24,8 @@ jobs:
     if: github.repository == 'cpr117/orbit-git' && github.ref == 'refs/heads/main'
     runs-on: macos-14
     timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,8 +88,9 @@ jobs:
           print(package.name + ': verified')
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
         with:
-          name: orbit-git-${{ github.run_id }}
+          name: orbit-git-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/orbit-git-package/
           if-no-files-found: error
           retention-days: 14
@@ -111,7 +114,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: orbit-git-${{ github.run_id }}
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: ${{ runner.temp }}/orbit-git-package
       - name: Publish the verified package with GitHub OIDC
         shell: bash
