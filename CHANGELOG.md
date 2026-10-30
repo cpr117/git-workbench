@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0 — Orbit Git Preview
+## 0.15.0 — Orbit Git
 
 - Publish verified build artifacts by ID so full workflow reruns and failed-publish reruns use the correct package.
 

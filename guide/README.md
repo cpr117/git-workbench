@@ -1,6 +1,6 @@
 # Orbit Git 使用指南网站
 
-插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。本指南以 **Orbit Git 0.15.0 预发布版**（`PRCooper.orbit-git`）为准。安装包、源码和校验文件均从 [组织仓库 v0.15.0](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) 获取；下载链接固定到对应 tag，避免预发布版与旧稳定版混淆。
+插件功能介绍、交互演示和安装指南，与插件一起按根目录的 [MIT License](../LICENSE) 开源。本指南以 **Orbit Git 0.15.0 稳定版**（`PRCooper.orbit-git`）为准。安装包、源码和校验文件均从 [组织仓库 v0.15.0](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) 获取；下载链接固定到对应 tag，确保指南与下载版本一致。
 
 ## 开发与预览
 

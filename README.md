@@ -2,19 +2,19 @@
 
 为 VS Code、Cursor 和 Qoder 提供接近 GoLand 的 Git 工作流：**分支 → 提交 → 文件 → Diff**。
 
-[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PRCooper.orbit-git) · [预览版与源码下载](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) · [问题反馈](https://github.com/cpr117/orbit-git/issues) · [MIT License](LICENSE)
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PRCooper.orbit-git) · [安装包与源码下载](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0) · [问题反馈](https://github.com/cpr117/orbit-git/issues) · [MIT License](LICENSE)
 
 ## 安装与打开
 
 需要桌面版 VS Code 1.95+ 或兼容编辑器、本地 Git 2.28+，以及受信任的 Git 工作区。
 
-当前版本为 **Orbit Git 0.15.0 预发布版**，扩展 ID 为 `PRCooper.orbit-git`。VS Code 可从 Marketplace 安装并选择预发布版本；Cursor、Qoder 或离线安装使用以下 VSIX 步骤。
+当前版本为 **Orbit Git 0.15.0 稳定版**，扩展 ID 为 `PRCooper.orbit-git`。VS Code 可从 Marketplace 安装；Cursor、Qoder 或离线安装使用以下 VSIX 步骤。
 
 1. 下载组织仓库的 [orbit-git-0.15.0.vsix](https://github.com/qimaotech/orbit-git/releases/download/v0.15.0/orbit-git-0.15.0.vsix)。[源码与 SHA256 校验文件](https://github.com/qimaotech/orbit-git/releases/tag/v0.15.0)位于同一发行版本。
 2. 在扩展面板的 `…` 中选择 **从 VSIX 安装**。安装后确认显示名为 **Orbit Git**、发布者为 `PRCooper`，再重新加载编辑器。
 3. 打开 Git 项目，点击状态栏 **Orbit Git**，或运行命令 **Orbit Git: 打开功能菜单**。
 
-命令行安装示例：`code --install-extension ./orbit-git-0.15.0.vsix`。预览包文件名可能带额外后缀，请替换为实际文件名。
+命令行安装示例：`code --install-extension ./orbit-git-0.15.0.vsix`。请替换为实际文件名。
 
 打开提交图的快捷键：macOS `Cmd+Alt+G`，Windows / Linux `Ctrl+Alt+G`。
 
