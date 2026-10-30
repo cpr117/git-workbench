@@ -42,8 +42,17 @@ jobs:
             || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(pkg.version)) {
             throw new Error('Unexpected extension identity or version');
           }
-          if (require('node:fs').statSync(pkg.icon).size > 1024 * 1024) {
+          const icon = require('node:fs').readFileSync(pkg.icon);
+          if (icon.length > 1024 * 1024) {
             throw new Error('Marketplace extension icon must not exceed 1024 KB');
+          }
+          if (icon.length < 24 || !icon.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+            throw new Error('Marketplace extension icon must be a PNG');
+          }
+          const width = icon.readUInt32BE(16);
+          const height = icon.readUInt32BE(20);
+          if (width < 128 || height < 128 || width > 1024 || height > 1024) {
+            throw new Error('Marketplace extension icon dimensions must be between 128 and 1024 pixels');
           }
           JS
       - run: npm ci
